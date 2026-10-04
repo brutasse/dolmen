@@ -1,0 +1,41 @@
+{{define "title"}}Gists{{end}}
+
+{{define "content"}}
+<h1 class="page-title">Your gists</h1>
+
+<input type="search" id="gist-search" class="search" placeholder="Search by title">
+
+<div id="gist-rows" class="gist-list">
+    {{if not .Gists}}
+    <p class="empty">No gists yet. Create your first one!</p>
+    {{end}}
+    <p id="no-match" class="empty hidden">No gists match the search.</p>
+    {{range .Gists}}
+    <a class="gist-row" href="/gist/{{.ID}}" data-name="{{.DisplayName}}" data-updated="{{.UpdatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">
+        <span class="gist-title">{{.DisplayName}}{{if .Description}}<span class="gist-desc">{{.Description}}</span>{{end}}</span>
+        <time class="gist-date rel-time" datetime="{{.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.UpdatedAt.Format "2006-01-02 15:04"}}">{{.UpdatedAt.Format "2006-01-02 15:04"}}</time>
+    </a>
+    {{end}}
+</div>
+
+<script>
+    (function() {
+        var rows = Array.prototype.slice.call(document.querySelectorAll('#gist-rows .gist-row'));
+
+        // Client-side search over names and descriptions.
+        var search = document.getElementById('gist-search');
+        var noMatch = document.getElementById('no-match');
+        search.addEventListener('input', function() {
+            var q = search.value.trim().toLowerCase();
+            var visible = 0;
+            rows.forEach(function(row) {
+                var hit = !q || row.querySelector('.gist-title').textContent.toLowerCase().indexOf(q) >= 0;
+                row.classList.toggle('hidden', !hit);
+                if (hit) visible++;
+            });
+            noMatch.classList.toggle('hidden', !(q && visible === 0 && rows.length));
+        });
+    })();
+</script>
+<script src="{{asset "app.js"}}" defer></script>
+{{end}}

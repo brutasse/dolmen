@@ -1,0 +1,111 @@
+{{define "title"}}{{if .Gist.ID}}Edit: {{if .Gist.Description}}{{.Gist.Description}}{{else}}{{.Gist.DisplayName}}{{end}}{{else}}Create Gist{{end}}{{end}}
+
+{{define "content"}}
+<h1 class="page-title">{{if .Gist.ID}}Edit{{else}}Create{{end}} Gist</h1>
+
+<form method="post" id="gistForm" action="{{if .Gist.ID}}/edit/{{.Gist.ID}}{{else}}/create{{end}}">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <div class="field">
+        <input type="text" id="description" name="description" value="{{.Gist.Description}}" placeholder="Description (optional)" aria-label="Description (optional)">
+    </div>
+    <div id="files">
+        {{range $i, $file := .Gist.Files}}
+        <div class="file-entry">
+            <div class="file-entry-head">
+                <input type="text" name="file{{$i}}_name" value="{{$file.Name}}" placeholder="File name">
+                <span class="tabs{{if not (ismd .Name)}} hidden{{end}}">
+                    <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
+                    <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
+                </span>
+                <span class="grip hidden" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
+                <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
+            </div>
+            {{if .Key}}
+            <input type="hidden" name="file{{$i}}_key" value="{{.Key}}">
+            <div class="attach-badge">Binary file: {{.Name}}{{if .Size}} &middot; {{humansize .Size}}{{end}} — drop a new file here to replace</div>
+            {{end}}
+            <div class="editor"><div class="lnum" aria-hidden="true"></div>
+            <textarea wrap="off" name="file{{$i}}_content" rows="10" placeholder="File content"{{if .Key}} class="hidden"{{end}}>{{$file.Content}}</textarea></div>
+            <div class="preview-pane file-body hidden"></div>
+        </div>
+        {{else}}
+        <div class="file-entry">
+            <div class="file-entry-head">
+                <input type="text" name="file0_name" placeholder="File name">
+                <span class="tabs hidden">
+                    <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
+                    <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
+                </span>
+                <span class="grip hidden" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
+                <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
+            </div>
+            <div class="editor"><div class="lnum" aria-hidden="true"></div>
+            <textarea wrap="off" name="file0_content" rows="10" placeholder="File content"></textarea></div>
+            <div class="preview-pane file-body hidden"></div>
+        </div>
+        {{end}}
+    </div>
+    <p class="toolbar">
+        <button type="button" id="addFile" class="btn btn-secondary"><svg class="i" aria-hidden="true"><use href="#i-add"/></svg>Add File</button>
+        {{if .Gist.ID}}<a href="/gist/{{.Gist.ID}}" class="btn btn-secondary"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Cancel</a>{{end}}
+        <button type="submit" class="btn btn-primary"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Save Gist</button>
+    </p>
+</form>
+
+<script src="{{asset "app.js"}}" defer></script>
+<script>
+    let fileIndex = {{len .Gist.Files}};
+    if (fileIndex === 0) fileIndex = 1;
+
+    const entryHTML = (i) => `
+        <div class="file-entry-head">
+            <input type="text" name="file${i}_name" placeholder="File name">
+            <span class="tabs hidden">
+                <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
+                <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
+            </span>
+            <span class="grip" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
+            <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
+        </div>
+        <div class="editor"><div class="lnum" aria-hidden="true"></div>
+        <textarea wrap="off" name="file${i}_content" rows="10" placeholder="File content"></textarea></div>
+        <div class="preview-pane file-body hidden"></div>
+    `;
+
+    const addEntry = () => {
+        const div = document.createElement('div');
+        div.className = 'file-entry';
+        div.innerHTML = entryHTML(fileIndex);
+        document.getElementById('files').appendChild(div);
+        fileIndex++;
+        return div;
+    };
+    document.getElementById('addFile').addEventListener('click', addEntry);
+    window.gistAddEntry = addEntry; // used by the attachment drop handler in app.js
+
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-file')) {
+            e.target.closest('.file-entry').remove();
+            if (window.gistUpdateSaveGate) window.gistUpdateSaveGate();
+        }
+    });
+
+    // Unsaved-changes guard: dirty whenever the form differs from page
+    // load. Blank values are ignored, so an added-then-empty file row or
+    // typed-then-cleared input is back to baseline and won't prompt.
+    const form = document.getElementById('gistForm');
+    const snapshot = () => [...form.elements]
+        .filter(el => el.name && el.value !== '')
+        .map(el => el.name + '\0' + el.value)
+        .join('\1');
+    const initial = snapshot();
+    let dirty = false;
+    form.addEventListener('input', () => { dirty = snapshot() !== initial; });
+    form.addEventListener('submit', () => { dirty = false; });
+    window.addEventListener('beforeunload', function(e) {
+        if (!dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+</script>
+{{end}}

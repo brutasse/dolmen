@@ -1,0 +1,35 @@
+# Dolmen configuration. Non-secret values only.
+#
+# S3 credentials are NOT configured here: the service uses the standard
+# AWS SDK credential chain (environment variables, shared config file,
+# instance profile). Likewise, oidc.client_secret below only names the
+# environment variable holding the client secret — its value never
+# appears in this file.
+
+# Listen address. Default ":8080".
+listen: ":8080"
+
+# Externally reachable origin; builds the OAuth redirect URI. Defaults
+# to http://localhost<listen> — set it for anything but local use.
+# base_url: https://dolmen.example.com
+
+# Name of a cookie set by an authenticating proxy (e.g. oauth2-proxy)
+# whose value is a signed ID token. It is trusted (same issuer and
+# client id) before the app's own id_token cookie. Unset means proxy
+# cookies are ignored.
+# auth_cookie_name: _oauth2_proxy_id
+
+oidc:
+  # Values below match the docker-compose dev stack (Dex).
+  issuer: http://localhost:5556/dex
+  client_id: gist-client
+  # Name of the environment variable holding the OIDC client secret.
+  client_secret: OIDC_CLIENT_SECRET
+
+s3:
+  # Values below match the docker-compose dev stack (s3mock).
+  bucket: gists
+  endpoint: http://localhost:9090
+  # Production example (path-style requests are always used):
+  # bucket: my-gists
+  # endpoint: https://sos-de-fra-1.exo.io

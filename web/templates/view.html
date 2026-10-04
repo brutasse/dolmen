@@ -1,0 +1,58 @@
+{{define "title"}}{{with .Gist.Owner}}{{localpart .}} / {{end}}{{if .Gist.Description}}{{.Gist.Description}}{{else}}{{.Gist.DisplayName}}{{end}}{{end}}
+
+{{define "content"}}
+<div class="gist-header">
+    <h1 class="page-title">{{with .Gist.Owner}}<span class="title-owner">{{localpart .}} / </span>{{end}}{{.Gist.DisplayName}}</h1>
+    <time class="gist-date rel-time" datetime="{{.Gist.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="{{.Gist.UpdatedAt.Format "2006-01-02 15:04"}}">{{.Gist.UpdatedAt.Format "2006-01-02 15:04"}}</time>
+    <div class="gist-actions">
+        {{if .Versions}}
+        <select id="versionSelect" class="version-select">
+            <option value="/gist/{{.Gist.ID}}">Current Version</option>
+            {{range .Versions}}
+            <option value="/gist/{{.ID}}/version/{{.VersionID}}" {{if eq .VersionID $.CurrentVid}}selected{{end}}>{{.LastModified.Format "2006-01-02 15:04"}}</option>
+            {{end}}
+        </select>
+        {{end}}
+        {{if eq .Gist.UserID .UserID}}
+        <a class="btn btn-secondary btn-sm" href="/edit/{{.Gist.ID}}"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg>Edit</a>
+        <form method="post" action="/delete/{{.Gist.ID}}" class="inline" onsubmit="return confirm('Delete this gist? This cannot be undone.')">
+            <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+            <button type="submit" class="btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Delete</button>
+        </form>
+        {{end}}
+    </div>
+</div>
+{{if .Gist.Description}}<p class="gist-desc page-desc">{{.Gist.Description}}</p>{{end}}
+
+{{if .CurrentVid}}
+<p class="notice">You are viewing an older version. <a href="/gist/{{.Gist.ID}}">Back to current version</a>.</p>
+{{end}}
+{{if .Versions}}
+<script>
+    document.getElementById('versionSelect').addEventListener('change', function() {
+        if (this.value) window.location = this.value;
+    });
+</script>
+{{end}}
+
+{{range .RenderedFiles}}
+{{template "filebox" dict "File" .}}
+{{end}}
+
+<script src="{{asset "app.js"}}" defer></script>
+{{if .NeedsMath}}
+<script>
+    window.MathJax = {
+        tex: {
+            inlineMath: [['\\(', '\\)']],
+            displayMath: [['\\[', '\\]']]
+        },
+        svg: { fontCache: 'global' }
+    };
+</script>
+<script defer src="{{asset "vendor/tex-svg.js"}}"></script>
+{{end}}
+{{if .NeedsMermaid}}
+<script defer src="{{asset "vendor/mermaid.min.js"}}" onload="mermaid.initialize({startOnLoad: true, securityLevel: 'strict'})"></script>
+{{end}}
+{{end}}

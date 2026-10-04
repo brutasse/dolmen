@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <meta name="color-scheme" content="light dark"/>
+  <style>path{fill:light-dark(#181818,#e8e8e8)}@media (prefers-color-scheme: dark){path{fill:#e8e8e8}}</style>
+  <path fill="#181818" fill-rule="evenodd" d="M5.5 0h13A5.5 5.5 0 0 1 24 5.5v13A5.5 5.5 0 0 1 18.5 24h-13A5.5 5.5 0 0 1 0 18.5v-13A5.5 5.5 0 0 1 5.5 0ZM7.68 16.75V12.05L5.66 12.41L6.53 7.73L18.34 6.81L18.62 9.97L16.61 10.4V16.75H14.02V10.97L10.27 11.69V16.75Z"/>
+</svg>

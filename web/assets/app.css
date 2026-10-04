@@ -1,0 +1,262 @@
+/* Gist — hand-written stylesheet, no build step.
+   Light and dark themes via custom properties; fonts self-hosted (OFL
+   licenses in assets/fonts). */
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/static/fonts/inter-var.woff2") format("woff2");
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("/static/fonts/jetbrainsmono-var.woff2") format("woff2");
+}
+
+:root {
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --accent: #0969da;
+    --danger: #cf222e;
+    --code-bg: #f6f8fa;
+    --notice-bg: #fff8c5;
+    --notice-border: #d4a72c;
+    --alert-note: #0969da;
+    --alert-tip: #1a7f37;
+    --alert-important: #8250df;
+    --alert-warning: #9a6700;
+    --alert-caution: #cf222e;
+    --font-text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0d1117;
+        --panel: #151b23;
+        --fg: #e6edf3;
+        --muted: #9198a1;
+        --border: #3d444d;
+        --accent: #4493f8;
+        --danger: #ff7b72;
+        --notice-bg: #4d2d00;
+        --notice-border: #9e6a03;
+        --alert-note: #4c8ede;
+        --alert-tip: #3fb950;
+        --alert-important: #a371f7;
+        --alert-warning: #d29922;
+        --alert-caution: #f85149;
+    }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { font-family: var(--font-text); }
+body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.55; font-size: 15px; }
+a { color: var(--accent); }
+h1, h2, h3 { line-height: 1.25; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+/* Utility: must beat any later display rule (.tabs is flex, etc). */
+.hidden { display: none !important; }
+.ta-c { text-align: center; }
+.muted { color: var(--muted); }
+
+/* Header */
+.site-head { background: var(--panel); border-bottom: 1px solid var(--border); }
+.head-inner { max-width: 960px; margin: 0 auto; padding: .65rem 1rem; display: flex; justify-content: space-between; align-items: center; }
+.brand { display: inline-flex; align-items: baseline; gap: .35rem; font-weight: 700; font-size: 1.05rem; color: var(--fg); text-decoration: none; }
+/* Cropped viewBox puts the svg baseline (its bottom edge) at the stones'
+   feet, so baseline alignment stands the dolmen on the text baseline. */
+.brand-mark { height: 1.25em; width: auto; }
+.head-nav { display: flex; align-items: center; gap: .9rem; }
+.user { display: inline-flex; align-items: center; gap: .45rem; color: var(--muted); font-size: .85rem; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 600; font-size: .8rem; text-transform: uppercase; }
+.pill { display: inline-flex; align-items: center; height: 1.6rem; padding: 0 .7rem; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border); color: var(--muted); font-size: .85rem; text-decoration: none; }
+.pill:hover { color: var(--accent); }
+
+/* Footer */
+.site-foot { background: var(--panel); border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+.site-foot .container { padding: .8rem 1rem; }
+.site-foot a { color: inherit; }
+
+/* Buttons and quiet links */
+.btn { display: inline-flex; align-items: center; padding: .3rem .8rem; border-radius: 6px; border: 1px solid transparent; font: inherit; font-size: .85rem; text-decoration: none; cursor: pointer; }
+.btn-sm { padding: .15rem .6rem; height: 1.6rem; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--panel); color: var(--fg); border-color: var(--border); }
+.btn.btn-danger { color: var(--danger); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.quiet { color: var(--muted); text-decoration: none; }
+.quiet:hover { color: var(--accent); }
+.link-danger { background: none; border: none; padding: 0; font: inherit; color: var(--danger); cursor: pointer; }
+.i { width: 1em; height: 1em; margin-right: .35em; vertical-align: -.125em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Headings and banners */
+.page-title { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 .75rem; }
+.gist-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; margin: 0 0 .75rem; }
+.gist-header .page-title { margin: 0; overflow-wrap: anywhere; }
+.title-owner { color: var(--muted); font-weight: 400; }
+.gist-actions { display: flex; align-items: center; gap: .5rem; margin-left: auto; align-self: center; }
+/* Equal-height row: a <select>'s intrinsic height comes from UA dropdown
+   metrics, not line-height, so pin the box height explicitly, and shake
+   the global select margin (meant for stacked form layout). */
+.gist-actions .btn { display: inline-flex; align-items: center; }
+.gist-actions .btn,
+.gist-actions .version-select { height: 1.75rem; }
+.gist-actions .version-select { margin: 0; }
+.toolbar { display: flex; gap: 1rem; align-items: center; margin: 0 0 1.25rem; }
+#gistForm .toolbar .btn-primary { margin-left: auto; }
+/* When Cancel precedes Save, it takes the push instead (two autos would split the slack) */
+#gistForm .toolbar a.btn { margin-left: auto; }
+#gistForm .toolbar a.btn + .btn-primary { margin-left: 0; }
+.notice { background: var(--notice-bg); border: 1px solid var(--notice-border); border-radius: 6px; padding: .6rem .9rem; margin: 0 0 1rem; }
+
+/* List page */
+.search { display: block; width: 100%; max-width: 22rem; margin: 0 0 1rem; }
+.gist-list { display: flex; flex-direction: column; gap: .5rem; }
+.gist-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .6rem .9rem; text-decoration: none; color: inherit; overflow-wrap: anywhere; }
+.gist-row:hover { background: var(--code-bg); color: var(--accent); }
+.gist-title { font-weight: 600; }
+.gist-date { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.empty { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
+.inline { display: inline; }
+
+/* Form controls */
+input[type="text"], input[type="search"], textarea, select {
+    width: 100%; padding: .45rem .6rem; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); color: var(--fg); font: inherit;
+}
+textarea { font-family: var(--font-mono); font-size: .85rem; line-height: 1.45; resize: vertical; max-height: 80vh; }
+/* line-numbered editor: wrap=off keeps one number per visual line */
+/* line-numbered editor: wrap=off keeps one number per visual line. The
+   gutter is absolutely positioned so its (potentially huge) content height
+   never stretches the editor; syncLnum sets the textarea's margin-left to
+   the gutter width whenever the digit count changes. */
+.editor { position: relative; }
+.editor .lnum { position: absolute; top: 0; bottom: 0; left: 0; overflow: hidden; white-space: pre; text-align: right; min-width: 1.6em; padding: .45rem .4rem; font-family: var(--font-mono); font-size: .85rem; line-height: 1.45; color: var(--muted); user-select: none; background: var(--code-bg); border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; }
+.editor textarea { display: block; width: 100%; height: 70vh; border-left: 0; border-radius: 0 6px 6px 0; }
+/* focus ring wraps gutter + textarea: box-shadow follows the wrapper's
+   border-radius, which outline does not reliably */
+.editor textarea:focus { outline: none; }
+.editor:has(> textarea:focus) { box-shadow: 0 0 0 3px var(--accent); }
+/* preview toggle and binary-replacement hide the textarea; the gutter follows */
+.editor:has(> textarea.hidden) { display: none; }
+select { width: auto; margin: 0 0 1rem; }
+label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .25rem; }
+.field { margin-bottom: 1rem; }
+.version-select { font: inherit; font-size: .8rem; padding: .2rem .5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); }
+
+.file-entry { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; }
+.file-entry-head { display: flex; gap: .75rem; align-items: center; margin-bottom: .5rem; }
+.file-entry-head input { flex: 1; }
+
+/* File boxes (view page) */
+.file { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; margin: 0 0 1.25rem; }
+.file-head { display: flex; justify-content: space-between; align-items: baseline; padding: .5rem .9rem; border-bottom: 1px solid var(--border); }
+.file-name { font-family: var(--font-mono); font-size: .9rem; font-weight: 600; margin: 0; }
+.file-actions { display: flex; gap: .75rem; align-items: center; font-size: .85rem; }
+.copy-file { background: none; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.file-body { padding: .9rem; overflow-wrap: break-word; }
+.file-body > :first-child { margin-top: 0; }
+
+/* Rendered content */
+.file-body p, .file-body ul, .file-body ol { margin: 0 0 .8rem; }
+.file-body ul, .file-body ol { padding-left: 1.4rem; }
+.file-body h1, .file-body h2, .file-body h3 { margin: 1.4rem 0 .6rem; }
+.file-body blockquote { margin: 0 0 .8rem; padding-left: .9rem; border-left: 3px solid var(--border); color: var(--muted); }
+.file-body img { max-width: 100%; }
+.file-body table { border-collapse: collapse; margin: 0 0 .8rem; }
+.file-body table th, .file-body table td { border: 1px solid var(--border); padding: .3rem .6rem; }
+.file-body table th { text-align: left; }
+/* markdown column alignment rides on align= attributes (UA-level hints) and
+   would lose to the rule above unless re-stated here */
+.file-body table [align="center"] { text-align: center; }
+.file-body table [align="right"] { text-align: right; }
+.file-body .table-wrap { overflow-x: auto; max-width: 100%; margin: 0 0 .8rem; }
+.file-body .table-wrap table { margin: 0; }
+.file-body code { font-family: var(--font-mono); font-size: .85em; background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: .05rem .3rem; }
+pre { margin: 0 0 .8rem; padding: .75rem .9rem; border-radius: 6px; background: var(--code-bg); overflow-x: auto; font-family: var(--font-mono); font-size: .82rem; line-height: 1.5; }
+.file-body pre code { background: none; border: none; padding: 0; font-size: inherit; }
+.file-body pre.chroma { border: 1px solid var(--border); background-color: var(--code-bg); }
+pre.mermaid { background: none; border: none; text-align: center; }
+
+/* Markdown extras: permalink anchors, task lists, footnotes, alerts, front matter, collapsibles */
+.heading-anchor { visibility: hidden; margin-left: .35rem; color: var(--accent); text-decoration: none; font-weight: 400; }
+.file-body h1:hover .heading-anchor, .file-body h2:hover .heading-anchor, .file-body h3:hover .heading-anchor,
+.file-body h4:hover .heading-anchor, .file-body h5:hover .heading-anchor, .file-body h6:hover .heading-anchor { visibility: visible; }
+.file-body li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.2em; }
+.file-body li > input[type="checkbox"]:first-child { margin-right: .4em; vertical-align: -.1em; }
+.footnotes { margin-top: 1.5rem; color: var(--muted); }
+.file-body hr { border: none; border-top: 1px solid var(--border); margin: 1.4rem 0; }
+.footnotes hr { border: none; border-top: 1px solid var(--border); margin: 0 0 .8rem; }
+.file-body .markdown-alert { color: var(--fg); border-left: 3px solid var(--muted); background: var(--code-bg); padding: .6rem .9rem; margin: 0 0 .8rem; border-radius: 0 6px 6px 0; }
+.file-body .markdown-alert > :first-child { margin-top: 0; }
+.file-body .markdown-alert > :last-child { margin-bottom: 0; }
+.file-body .markdown-alert::before { display: block; font-weight: 600; margin-bottom: .35rem; }
+.file-body .markdown-alert-note { border-left-color: var(--alert-note); } .file-body .markdown-alert-note::before { content: "Note"; color: var(--alert-note); }
+.file-body .markdown-alert-tip { border-left-color: var(--alert-tip); } .file-body .markdown-alert-tip::before { content: "Tip"; color: var(--alert-tip); }
+.file-body .markdown-alert-important { border-left-color: var(--alert-important); } .file-body .markdown-alert-important::before { content: "Important"; color: var(--alert-important); }
+.file-body .markdown-alert-warning { border-left-color: var(--alert-warning); } .file-body .markdown-alert-warning::before { content: "Warning"; color: var(--alert-warning); }
+.file-body .markdown-alert-caution { border-left-color: var(--alert-caution); } .file-body .markdown-alert-caution::before { content: "Caution"; color: var(--alert-caution); }
+.file-body table.frontmatter th { color: var(--muted); white-space: nowrap; }
+.file-body details { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: .5rem .9rem; margin: 0 0 .8rem; }
+.file-body details > :last-child { margin-bottom: 0; }
+.file-body summary { cursor: pointer; font-weight: 600; }
+.file-body details[open] summary { margin-bottom: .5rem; }
+.file-body kbd { font-family: var(--font-mono); font-size: .8em; background: var(--code-bg); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: .1rem .35rem; }
+
+/* Copy buttons */
+.copy-block {
+    position: absolute; top: .4rem; right: .5rem; padding: .1rem .45rem;
+    font-size: .75rem; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 5px; cursor: pointer;
+    opacity: 0;
+}
+.codeblock { position: relative; }
+.codeblock:hover .copy-block, .copy-block:focus { opacity: 1; }
+@media (hover: none) { .copy-block { opacity: 1; } }
+
+/* Edit/Preview tabs (edit page) and descriptions */
+.tabs { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.tab { padding: .2rem .7rem; font-size: .8rem; background: var(--panel); color: var(--muted); border: none; cursor: pointer; font: inherit; font-size: .8rem; }
+.tab + .tab { border-left: 1px solid var(--border); }
+.tab.is-active { background: var(--code-bg); color: var(--fg); }
+.preview-pane { border: 1px dashed var(--border); border-radius: 6px; max-height: 80vh; overflow-y: auto; }
+.gist-desc { display: block; color: var(--muted); font-weight: 400; font-size: .85rem; margin: .1rem 0 0; overflow-wrap: anywhere; }
+.page-desc { margin: -.4rem 0 1.25rem; font-size: .95rem; }
+
+/* Embedded blobs (view page) */
+.blob-image { max-width: 100%; border-radius: 6px; }
+.blob-audio, .blob-video { width: 100%; max-width: 720px; border-radius: 6px; }
+.blob-video { background: #000; }
+.blob-pdf { width: 100%; height: 640px; border: 1px solid var(--border); border-radius: 6px; }
+.blob-file { margin: 0; }
+
+/* Reorder grip (edit page) */
+.grip { cursor: grab; user-select: none; color: var(--muted); font-weight: 700; padding: .1rem .3rem; }
+.grip .i { margin-right: 0; }
+.file-entry.dragging { opacity: .4; }
+
+/* File-drop affordances: solid = this row is replaced, dashed = this row
+   receives the next file, overlay pill = what the whole drop will do. */
+.file-entry.dragover { outline: 2px solid var(--accent, #4b7bec); outline-offset: 2px; border-radius: 6px; }
+.file-entry.dragtarget { outline: 2px dashed var(--accent, #4b7bec); outline-offset: 2px; border-radius: 6px; }
+#dropOverlay { position: fixed; inset: .5rem; z-index: 40; display: none; pointer-events: none; border: 3px dashed var(--accent, #4b7bec); border-radius: 8px; }
+#dropOverlay.active { display: block; }
+.drop-hint { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .9rem; font-size: .85rem; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); white-space: nowrap; }
+
+/* Attachments (edit page) */
+.attach-badge { padding: .5rem .75rem; margin: 0 0 .5rem; border: 1px dashed var(--border); border-radius: 6px; color: var(--muted); font-size: .85rem; }
+.attach-badge.is-error { border-style: solid; border-color: var(--danger, #c62828); color: var(--danger, #c62828); }
+
+/* Pending replace chip: a drop/paste awaits a decision on this row */
+.replace-chip { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; margin: 0 0 .6rem; border: 2px solid var(--accent, #4b7bec); border-radius: 6px; background: var(--code-bg); box-shadow: 0 2px 10px rgba(0, 0, 0, .15); font-weight: 600; }
+.chip-btn { font: inherit; font-size: .8rem; padding: .15rem .55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent, #4b7bec); color: var(--accent, #4b7bec); }

@@ -1,0 +1,45 @@
+{{/* Shared components. Called with dict-built data, e.g.:
+     {{template "filebox" dict "File" .}} */}}
+
+{{/* Inline icon sprite (feather-style stroke paths, currentColor). Rendered
+     once by layout.html; buttons reference symbols with
+     <svg class="i"><use href="#i-name"/></svg>. */}}
+{{define "icons"}}
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="i-add" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-raw" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/></g></symbol>
+</svg>
+{{end}}
+
+{{define "filebox"}}
+<section class="file">
+    <header class="file-head">
+        <h2 class="file-name">{{.File.Name}}</h2>
+        <span class="file-actions">
+            {{if eq .File.Kind "text"}}
+            <a class="quiet" href="{{.File.RawURL}}"><svg class="i" aria-hidden="true"><use href="#i-raw"/></svg>Raw</a>
+            <button type="button" class="copy-file" data-copy-url="{{.File.RawURL}}"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg><span class="i-label">Copy</span></button>
+            {{else}}
+            <a class="quiet" href="{{.File.RawURL}}"><svg class="i" aria-hidden="true"><use href="#i-raw"/></svg>Raw</a>
+            {{end}}
+        </span>
+    </header>
+    {{if eq .File.Kind "text"}}
+    <div class="file-body">{{.File.Body}}</div>
+    {{else}}
+    <div class="file-body">
+        {{if eq .File.Kind "image"}}<img class="blob blob-image" src="{{.File.RawURL}}" alt="{{.File.Name}}">
+        {{else if eq .File.Kind "audio"}}<audio class="blob blob-audio" controls src="{{.File.RawURL}}"></audio>
+        {{else if eq .File.Kind "video"}}<video class="blob blob-video" controls src="{{.File.RawURL}}"></video>
+        {{else if eq .File.Kind "pdf"}}<iframe class="blob blob-pdf" src="{{.File.RawURL}}"></iframe>
+        {{else}}<p class="blob-file">Binary file &middot; <a href="{{.File.RawURL}}">Download</a> ({{.File.SizeText}})</p>{{end}}
+    </div>
+    {{end}}
+</section>
+{{end}}

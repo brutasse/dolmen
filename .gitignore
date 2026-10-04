@@ -1,0 +1,4 @@
+envdir
+/dolmen
+dex.db/
+config.yaml
