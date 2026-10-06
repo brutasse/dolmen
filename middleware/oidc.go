@@ -27,17 +27,14 @@ func opaqueUserID(sub string) string {
 
 // OIDCMiddleware validates OIDC tokens and resolves an opaque user ID from
 // the mandatory sub claim; the email claim goes along as display metadata.
-// authCookieName names an extra cookie holding a signed ID token, e.g. one
-// set by an authenticating proxy; it is consulted before the app's own
-// id_token cookie.
-func OIDCMiddleware(verifier *oidc.IDTokenVerifier, authCookieName string) func(http.Handler) http.Handler {
+func OIDCMiddleware(verifier *oidc.IDTokenVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/login" || r.URL.Path == "/callback" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			token := extractToken(r, authCookieName)
+			token := extractToken(r)
 			if token == "" {
 				redirectURL := url.QueryEscape(r.URL.Path + "?" + r.URL.RawQuery)
 				http.Redirect(w, r, "/login?redirect="+redirectURL, http.StatusFound)
@@ -72,14 +69,9 @@ func OIDCMiddleware(verifier *oidc.IDTokenVerifier, authCookieName string) func(
 	}
 }
 
-// extractToken extracts the ID token from the configured proxy cookie, the
-// app's own id_token cookie, or the Authorization header, in that order.
-func extractToken(r *http.Request, authCookieName string) string {
-	if authCookieName != "" {
-		if cookie, err := r.Cookie(authCookieName); err == nil {
-			return cookie.Value
-		}
-	}
+// extractToken extracts the ID token from the app's own id_token cookie or
+// the Authorization header, in that order.
+func extractToken(r *http.Request) string {
 	if cookie, err := r.Cookie("id_token"); err == nil {
 		return cookie.Value
 	}

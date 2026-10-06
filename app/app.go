@@ -15,16 +15,15 @@ import (
 )
 
 // New builds the application's HTTP handler. cfg supplies the externally
-// reachable origin (used to build OAuth redirect URIs) and the optional
-// name of a proxy cookie holding a signed ID token. Templates and static
-// assets come from the embedded web package, so the binary runs from
-// anywhere with no CDN.
+// reachable origin (used to build OAuth redirect URIs). Templates and
+// static assets come from the embedded web package, so the binary runs
+// from anywhere with no CDN.
 func New(s3Client *s3.Client, provider *oidc.Provider, verifier *oidc.IDTokenVerifier, cfg *config.Config) http.Handler {
 	h := handlers.NewHandler(s3Client, provider, cfg)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
-	r.Use(middleware.OIDCMiddleware(verifier, cfg.AuthCookieName))
+	r.Use(middleware.OIDCMiddleware(verifier))
 	r.Use(middleware.CSRF(middleware.CookieSecure(cfg.BaseURL)))
 
 	r.Handle("/static/*", web.StaticHandler())

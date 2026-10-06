@@ -13,17 +13,15 @@ listen: ":8080"
 # to http://localhost<listen> — set it for anything but local use.
 # base_url: https://dolmen.example.com
 
-# Name of a cookie set by an authenticating proxy (e.g. oauth2-proxy)
-# whose value is a signed ID token. It is trusted (same issuer and
-# client id) before the app's own id_token cookie. Unset means proxy
-# cookies are ignored.
-# auth_cookie_name: _oauth2_proxy_id
-
 oidc:
   # Values below match the docker-compose dev stack (Dex).
   issuer: http://localhost:5556/dex
   client_id: gist-client
   # Name of the environment variable holding the OIDC client secret.
+  # Optional: omit it to run behind an authenticating proxy that
+  # forwards the ID token as an "Authorization: Bearer" header. Tokens
+  # are still verified against issuer and client_id; only the app's own
+  # /login and /callback flow is disabled (they answer 503).
   client_secret: OIDC_CLIENT_SECRET
 
 s3:

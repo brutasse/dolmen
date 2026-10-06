@@ -293,6 +293,11 @@ func (h *Handler) ViewVersion(w http.ResponseWriter, r *http.Request) {
 
 // Login redirects to OIDC auth
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	if h.oidcCfg.ClientSecret == "" {
+		http.Error(w, "The built-in login flow is disabled (no oidc.client_secret)", http.StatusServiceUnavailable)
+		return
+	}
+
 	state, err := generateState()
 	if err != nil {
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
@@ -327,6 +332,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Callback handles OIDC callback
 func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
+	if h.oidcCfg.ClientSecret == "" {
+		http.Error(w, "The built-in login flow is disabled (no oidc.client_secret)", http.StatusServiceUnavailable)
+		return
+	}
+
 	ctx := r.Context()
 
 	code := r.URL.Query().Get("code")
