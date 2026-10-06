@@ -31,59 +31,43 @@ func TestExtractToken(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		cookieName string
-		cookies    map[string]string
-		bearer     string
-		want       string
+		name    string
+		cookies map[string]string
+		bearer  string
+		want    string
 	}{
 		{
-			name:       "configured cookie wins over id_token and bearer",
-			cookieName: "proxy_jwt",
-			cookies:    map[string]string{"proxy_jwt": "from-proxy", "id_token": "from-app"},
-			bearer:     "from-header",
-			want:       "from-proxy",
-		},
-		{
-			name:       "falls back to id_token when configured cookie absent",
-			cookieName: "proxy_jwt",
-			cookies:    map[string]string{"id_token": "from-app"},
-			want:       "from-app",
-		},
-		{
-			name:       "falls back to bearer when no cookie present",
-			cookieName: "proxy_jwt",
-			bearer:     "from-header",
-			want:       "from-header",
-		},
-		{
-			name:    "unset cookie name keeps id_token then bearer order",
+			name:    "id_token wins over bearer",
 			cookies: map[string]string{"id_token": "from-app"},
 			bearer:  "from-header",
 			want:    "from-app",
 		},
 		{
-			name:       "no token anywhere",
-			cookieName: "proxy_jwt",
-			want:       "",
+			name:   "falls back to bearer when no cookie present",
+			bearer: "from-header",
+			want:   "from-header",
+		},
+		{
+			name:    "no token anywhere",
+			cookies: map[string]string{"other": "x"},
+			want:    "",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := extractToken(request(tc.cookies, tc.bearer), tc.cookieName); got != tc.want {
+			if got := extractToken(request(tc.cookies, tc.bearer)); got != tc.want {
 				t.Errorf("extractToken() = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-// Proxy cookie mode must not touch session lifetime: the middleware reads
-// the proxy's cookie and never sets cookies itself, so the app's own 1h
+// A proxy-forwarded token must not touch session lifetime: the middleware
+// reads the token and never sets cookies itself, so the app's own 1h
 // id_token expiry never caps the proxy session. The only expiry enforced
 // on a proxy-supplied token is the token's own exp claim.
-func TestOIDCMiddlewareProxyCookieNoSessionExpiry(t *testing.T) {
-	const proxyCookie = "_oauth2_proxy_id"
+func TestOIDCMiddlewareBearerNoSessionExpiry(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -126,19 +110,19 @@ func TestOIDCMiddlewareProxyCookieNoSessionExpiry(t *testing.T) {
 	serve := func(t *testing.T, mw http.Handler, token string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(http.MethodGet, "/gists", nil)
-		r.AddCookie(&http.Cookie{Name: proxyCookie, Value: token})
+		r.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 		mw.ServeHTTP(w, r)
 		return w
 	}
 
-	t.Run("valid proxy token passes with no cookies set", func(t *testing.T) {
+	t.Run("valid bearer token passes with no cookies set", func(t *testing.T) {
 		var userID, email string
 		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID = GetUserID(r.Context())
 			email = GetUserEmail(r.Context())
 		})
-		mw := OIDCMiddleware(verifier, proxyCookie)(next)
+		mw := OIDCMiddleware(verifier)(next)
 		w := serve(t, mw, sign(time.Now().Add(time.Hour), "alice"))
 		if w.Code != http.StatusOK {
 			t.Fatalf("code = %d, want 200 (body %s)", w.Code, w.Body)
@@ -159,7 +143,7 @@ func TestOIDCMiddlewareProxyCookieNoSessionExpiry(t *testing.T) {
 	})
 
 	t.Run("token without sub is rejected", func(t *testing.T) {
-		mw := OIDCMiddleware(verifier, proxyCookie)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		mw := OIDCMiddleware(verifier)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Error("handler ran without a sub claim")
 		}))
 		w := serve(t, mw, sign(time.Now().Add(time.Hour), ""))
@@ -168,8 +152,8 @@ func TestOIDCMiddlewareProxyCookieNoSessionExpiry(t *testing.T) {
 		}
 	})
 
-	t.Run("expired proxy token redirects despite valid signature", func(t *testing.T) {
-		mw := OIDCMiddleware(verifier, proxyCookie)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	t.Run("expired bearer token redirects despite valid signature", func(t *testing.T) {
+		mw := OIDCMiddleware(verifier)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Error("handler ran with an expired token")
 		}))
 		w := serve(t, mw, sign(time.Now().Add(-time.Minute), "alice"))

@@ -60,6 +60,22 @@ s3:
 	}
 }
 
+func TestLoadWithoutClientSecretDisablesLogin(t *testing.T) {
+	cfg, err := Load(write(t, `
+oidc:
+  issuer: http://localhost:5556/dex
+  client_id: gist-client
+s3:
+  bucket: gists
+`))
+	if err != nil {
+		t.Fatalf("config without client_secret rejected: %v", err)
+	}
+	if cfg.OIDC.ClientSecret != "" {
+		t.Errorf("client secret = %q, want empty", cfg.OIDC.ClientSecret)
+	}
+}
+
 func TestLoadReportsAllMissing(t *testing.T) {
 	err := func() error {
 		_, err := Load(write(t, "oidc:\n  client_secret: TEST_CLIENT_SECRET_NOT_SET\n"))

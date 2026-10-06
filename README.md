@@ -98,28 +98,29 @@ values matching the docker-compose dev stack.
 
 Non-secret values live in the file. A secret appears only as a reference:
 `oidc.client_secret` names the environment variable that holds the client
-secret, and startup fails if that variable is unset. S3 credentials are not
-configuration at all; the standard AWS SDK credential chain applies
-(environment variables, shared config file, instance profile).
+secret; if the key is present and that variable is unset, startup fails. S3
+credentials are not configuration at all; the standard AWS SDK credential
+chain applies (environment variables, shared config file, instance profile).
 
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `oidc.issuer` | yes | OIDC issuer URL |
 | `oidc.client_id` | yes | OAuth client id |
-| `oidc.client_secret` | yes | Name of the environment variable holding the OAuth client secret |
+| `oidc.client_secret` | no | Name of the environment variable holding the OAuth client secret |
 | `s3.bucket` | yes | Bucket that holds the gists; the app enables its versioning and CORS on boot |
 | `s3.endpoint` | no | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS |
 | `listen` | no | Listen address. Defaults to `:8080` |
 | `base_url` | no | Externally reachable origin; builds the OAuth redirect URI. Defaults to `http://localhost<listen>` |
-| `auth_cookie_name` | no | Cookie set by an authenticating proxy holding a signed ID token; checked before the app's own `id_token` cookie |
 
-The proxy cookie must carry a token issued by `oidc.issuer` with
-`oidc.client_id` in its audience. If that verification fails, the app
-redirects to its own login. In this mode the app never sets or refreshes
-the proxy cookie — the proxy owns its session lifetime entirely, and the
-1-hour `id_token` cookie expiry applies to the app's own login flow only.
-What the app always enforces on a proxy-supplied token is the token's own
-`exp` claim; keeping it fresh is the proxy's job.
+`oidc.client_secret` is only needed for the app's own login flow. Without
+it, `/login` and `/callback` answer 503 and the app serves only requests
+carrying a token from elsewhere — typically an authenticating proxy (for
+example oauth2-proxy) that forwards the ID token as an
+`Authorization: Bearer` header. Every token is still verified against
+`oidc.issuer` and `oidc.client_id`: signature, audience, and expiry. That
+is why both stay required. In this mode the app never sets a session
+cookie, so the proxy owns the session lifetime entirely; the app only
+enforces the token's own `exp` claim.
 
 The app always sends path-style S3 requests and pins the SDK region to
 `us-east-1`. S3-compatible providers route by endpoint, so this works.

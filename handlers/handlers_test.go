@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"dolmen/config"
 	"dolmen/models"
 	"dolmen/web"
 )
@@ -276,5 +277,16 @@ func TestGistFromFormKeyEntry(t *testing.T) {
 	}
 	if gist.Files[1].Name != "gistfile.txt" || gist.Files[1].Key == "" {
 		t.Errorf("unnamed key entry = %+v, want auto-name + key", gist.Files[1])
+	}
+}
+
+func TestLoginDisabledWithoutClientSecret(t *testing.T) {
+	h := &Handler{oidcCfg: config.OIDCConfig{Issuer: "http://issuer.example.com/dex", ClientID: "c"}}
+	for name, fn := range map[string]http.HandlerFunc{"Login": h.Login, "Callback": h.Callback} {
+		w := httptest.NewRecorder()
+		fn(w, httptest.NewRequest(http.MethodGet, "/"+strings.ToLower(name), nil))
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s with empty client secret: code %d, want 503", name, w.Code)
+		}
 	}
 }

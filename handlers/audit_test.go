@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"dolmen/config"
 	"github.com/google/uuid"
 )
 
@@ -92,7 +93,7 @@ func TestContentDispositionSafeCharset(t *testing.T) {
 }
 
 func TestCallbackRejectsEmptyStateAndExpiresFlowCookies(t *testing.T) {
-	h := &Handler{baseURL: "https://gist.example"}
+	h := &Handler{baseURL: "https://gist.example", oidcCfg: config.OIDCConfig{ClientSecret: "s"}}
 	req := httptest.NewRequest("GET", "/callback?code=x&state=", nil)
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: ""})
 	req.AddCookie(&http.Cookie{Name: "oauth_code_verifier", Value: "v"})
@@ -119,7 +120,7 @@ func TestCallbackRejectsEmptyStateAndExpiresFlowCookies(t *testing.T) {
 }
 
 func TestCallbackStateMismatchRejected(t *testing.T) {
-	h := &Handler{}
+	h := &Handler{oidcCfg: config.OIDCConfig{ClientSecret: "s"}}
 	req := httptest.NewRequest("GET", "/callback?code=x&state=attacker", nil)
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "victim"})
 	rec := httptest.NewRecorder()

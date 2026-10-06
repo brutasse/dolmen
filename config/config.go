@@ -17,13 +17,14 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	// BaseURL is the externally reachable origin used to build the OAuth
 	// redirect URI. Defaults to http://localhost<listen>.
-	BaseURL        string     `yaml:"base_url"`
-	AuthCookieName string     `yaml:"auth_cookie_name"`
-	OIDC           OIDCConfig `yaml:"oidc"`
-	S3             S3Config   `yaml:"s3"`
+	BaseURL string     `yaml:"base_url"`
+	OIDC    OIDCConfig `yaml:"oidc"`
+	S3      S3Config   `yaml:"s3"`
 }
 
-// OIDCConfig configures the authorization-code + PKCE login flow.
+// OIDCConfig configures the authorization-code + PKCE login flow. The flow
+// is only available when ClientSecret is set; without it the app verifies
+// tokens issued by Issuer for ClientID but cannot run its own login.
 type OIDCConfig struct {
 	Issuer   string `yaml:"issuer"`
 	ClientID string `yaml:"client_id"`
@@ -84,10 +85,10 @@ func (c *Config) validate() error {
 	if c.OIDC.ClientID == "" {
 		add("oidc.client_id is required")
 	}
-	switch {
-	case c.OIDC.ClientSecret == "":
-		add("oidc.client_secret is required (name of the env var holding the secret)")
-	default:
+	// An empty client_secret disables the built-in login flow: the app
+	// then only verifies tokens an authenticating proxy forwards, which
+	// needs the issuer and client id but no secret.
+	if c.OIDC.ClientSecret != "" {
 		v, ok := os.LookupEnv(c.OIDC.ClientSecret)
 		if !ok || v == "" {
 			add("oidc.client_secret: environment variable %q is not set or empty", c.OIDC.ClientSecret)
