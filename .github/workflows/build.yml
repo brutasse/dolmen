@@ -97,20 +97,20 @@ jobs:
     timeout-minutes: 10
     permissions:
       packages: read
-    services:
-      s3mock:
-        image: adobe/s3mock:5.2.3
-        ports: ["9090:9090"]
-        env:
-          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: gists
-      dex:
-        image: dexidp/dex:v2.37.0
-        ports: ["5556:5556"]
-        volumes:
-          - configs/dex-config.yaml:/dex-config.yaml:ro
-        args: ["dex", "serve", "/dex-config.yaml"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same pinned stack as local dev (docker-compose.yaml). The app exits at
+      # boot when Dex or S3 is unreachable, so wait for both to answer.
+      - name: Start s3mock and Dex
+        run: |
+          docker compose up -d s3mock dex
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:9090/favicon.ico &&
+              curl -sf -o /dev/null http://localhost:5556/dex/keys && break
+            sleep 1
+            [ "$i" = 60 ] && { docker compose logs; exit 1; }
+          done
 
       - name: Log in to ghcr.io
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
