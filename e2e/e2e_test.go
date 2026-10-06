@@ -764,6 +764,83 @@ func TestBearerAuth(t *testing.T) {
 	}
 }
 
+// TestLoginDisabledMode boots a second app instance without a client
+// secret — the behind-a-proxy topology — and pins its contract: a bearer
+// token from a real login passes, anonymous requests get 401 (not a
+// /login redirect, giving the proxy something to re-authenticate on), and
+// the disabled built-in flow answers 503.
+func TestLoginDisabledMode(t *testing.T) {
+	resetStore(t)
+	b := loginAs(t, alice)
+	token := b.idToken()
+	if token == "" {
+		t.Fatal("no id_token after login")
+	}
+
+	port, ln, err := reservePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cl, err := dolmens3.NewClient(ctx, appCfg.S3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov, ver, err := middleware.NewOIDCProviderAndVerifier(ctx, appCfg.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := appCfg
+	disabled.OIDC.ClientSecret = ""
+	disabled.BaseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+	go http.Serve(ln, app.New(cl, prov, ver, &disabled)) //nolint:errcheck
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := retryGet(client, disabled.BaseURL+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("anonymous GET /: %d, want 401", resp.StatusCode)
+	}
+
+	req, _ := http.NewRequest("GET", disabled.BaseURL+"/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	tokResp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokResp.Body.Close()
+	if tokResp.StatusCode != http.StatusOK {
+		t.Errorf("bearer GET /: %d, want 200", tokResp.StatusCode)
+	}
+
+	lr, err := retryGet(client, disabled.BaseURL+"/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lr.Body.Close()
+	if lr.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("GET /login: %d, want 503", lr.StatusCode)
+	}
+}
+
+// retryGet waits for a freshly served listener to answer.
+func retryGet(client *http.Client, url string) (*http.Response, error) {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		resp, err := client.Get(url)
+		if err == nil {
+			return resp, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("waiting for %s: %w", url, err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // TestCrossUserView verifies cross-user read access and write isolation.
 func TestCrossUserView(t *testing.T) {
 	resetStore(t)

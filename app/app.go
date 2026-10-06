@@ -23,25 +23,36 @@ func New(s3Client *s3.Client, provider *oidc.Provider, verifier *oidc.IDTokenVer
 
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
-	r.Use(middleware.OIDCMiddleware(verifier))
-	r.Use(middleware.CSRF(middleware.CookieSecure(cfg.BaseURL)))
+	r.Use(chimw.RequestID)
+	r.Use(chimw.Logger)
 
-	r.Handle("/static/*", web.StaticHandler())
-	r.Get("/", h.CreateGist)
-	r.Get("/gists", h.ListGists)
-	r.Get("/raw/{id}", h.RawGist)
-	r.Get("/raw/{id}/*", h.RawGist)
-	r.Get("/gist/{id}", h.ViewGist)
-	r.Get("/gist/{id}/versions", h.ListVersions)
-	r.Get("/gist/{id}/version/{vid}", h.ViewVersion)
-	r.Get("/edit/{id}", h.EditGist)
-	r.Post("/edit/{id}", h.UpdateGist)
-	r.Post("/create", h.StoreGist)
-	r.Post("/upload", h.Upload)
-	r.Post("/preview", h.Preview)
-	r.Post("/delete/{id}", h.DeleteGist)
-	r.Get("/login", h.Login)
-	r.Get("/callback", h.Callback)
+	// Unauthenticated liveness endpoint for container supervisors.
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("ok\n")) //nolint:errcheck
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.SecurityHeaders())
+		r.Use(middleware.OIDCMiddleware(verifier, cfg.OIDC.ClientSecret != ""))
+		r.Use(middleware.CSRF(middleware.CookieSecure(cfg.BaseURL)))
+
+		r.Handle("/static/*", web.StaticHandler())
+		r.Get("/", h.CreateGist)
+		r.Get("/gists", h.ListGists)
+		r.Get("/raw/{id}", h.RawGist)
+		r.Get("/raw/{id}/*", h.RawGist)
+		r.Get("/gist/{id}", h.ViewGist)
+		r.Get("/gist/{id}/versions", h.ListVersions)
+		r.Get("/gist/{id}/version/{vid}", h.ViewVersion)
+		r.Get("/edit/{id}", h.EditGist)
+		r.Post("/edit/{id}", h.UpdateGist)
+		r.Post("/create", h.StoreGist)
+		r.Post("/upload", h.Upload)
+		r.Post("/preview", h.Preview)
+		r.Post("/delete/{id}", h.DeleteGist)
+		r.Get("/login", h.Login)
+		r.Get("/callback", h.Callback)
+	})
 
 	return r
 }

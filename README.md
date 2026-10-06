@@ -9,8 +9,9 @@
 
 A stateless private gist service in Go, similar to GitHub Gists. Everything
 lives in S3. The binary embeds the templates, the stylesheet, the fonts, and
-the vendored JavaScript, so it serves no third-party code and needs no files
-on disk. `go build` is the whole build.
+the vendored JavaScript, so it needs no files on disk and makes no external
+requests at runtime — Mermaid and MathJax ship in the binary, not from a
+CDN. `go build` is the whole build.
 
 ## Features
 
@@ -116,7 +117,9 @@ chain applies (environment variables, shared config file, instance profile).
 it, `/login` and `/callback` answer 503 and the app serves only requests
 carrying a token from elsewhere — typically an authenticating proxy (for
 example oauth2-proxy) that forwards the ID token as an
-`Authorization: Bearer` header. Every token is still verified against
+`Authorization: Bearer` header. Requests without a valid token then answer
+401 instead of redirecting to `/login`, which is what a proxy watches for
+to trigger re-authentication. Every token is still verified against
 `oidc.issuer` and `oidc.client_id`: signature, audience, and expiry. That
 is why both stay required. In this mode the app never sets a session
 cookie, so the proxy owns the session lifetime entirely; the app only
@@ -182,7 +185,31 @@ go test -tags e2e ./e2e/
 2. Write a config file; `configs/example.yaml` is the starting point. Export
    the environment variables for the client secret and the S3 credentials.
 3. Run `./dolmen -config /etc/dolmen/config.yaml` from any directory. The
-   binary needs no other file.
+   binary needs no other file. `./dolmen -version` prints the build stamp.
+
+SIGINT and SIGTERM drain in-flight requests for up to 10 seconds before the
+process exits. An unauthenticated `GET /healthz` answers `ok` for container
+supervisors.
+
+### Container
+
+A distroless, multi-arch (linux/amd64, linux/arm64) image is published to
+ghcr.io: pushes to `main` publish `:latest`, version tags publish
+`:vX.Y.Z`.
+
+```bash
+docker run -d \
+  -v /etc/dolmen/config.yaml:/config/dolmen.yaml:ro \
+  -e OIDC_CLIENT_SECRET=... \
+  -e AWS_ACCESS_KEY_ID=... -e AWS_SECRET_ACCESS_KEY=... \
+  -p 8080:8080 \
+  ghcr.io/brutasse/dolmen:latest
+```
+
+The image runs as `nonroot` and contains nothing but the binary. The config
+file is mounted read-only at the path the entrypoint expects; override the
+command arguments to point `-config` elsewhere. S3 credentials come from
+the usual AWS environment variables (or any other SDK credential provider).
 
 At startup the app configures the bucket it needs. It enables object
 versioning, because gist history is S3 versions. It also ensures a CORS rule
@@ -221,6 +248,8 @@ MathJax, Mermaid. There is no build step and no external request:
   `prefers-color-scheme` through CSS custom properties. Edit it directly.
 - Fonts are Inter (text) and JetBrains Mono (code): self-hosted variable
   woff2 subsets under `web/assets/fonts/`, each with its OFL license.
+- Mermaid 12.1.0 (MIT) and MathJax 3.2.2 (Apache-2.0) are vendored under
+  `web/assets/vendor/`, each with its license file.
 - The highlight colors in `web/assets/chroma.css` come from the same Go
   style the renderer uses. Regenerate them with:
 

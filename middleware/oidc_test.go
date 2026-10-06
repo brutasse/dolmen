@@ -122,7 +122,7 @@ func TestOIDCMiddlewareBearerNoSessionExpiry(t *testing.T) {
 			userID = GetUserID(r.Context())
 			email = GetUserEmail(r.Context())
 		})
-		mw := OIDCMiddleware(verifier)(next)
+		mw := OIDCMiddleware(verifier, true)(next)
 		w := serve(t, mw, sign(time.Now().Add(time.Hour), "alice"))
 		if w.Code != http.StatusOK {
 			t.Fatalf("code = %d, want 200 (body %s)", w.Code, w.Body)
@@ -143,7 +143,7 @@ func TestOIDCMiddlewareBearerNoSessionExpiry(t *testing.T) {
 	})
 
 	t.Run("token without sub is rejected", func(t *testing.T) {
-		mw := OIDCMiddleware(verifier)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		mw := OIDCMiddleware(verifier, true)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Error("handler ran without a sub claim")
 		}))
 		w := serve(t, mw, sign(time.Now().Add(time.Hour), ""))
@@ -153,12 +153,31 @@ func TestOIDCMiddlewareBearerNoSessionExpiry(t *testing.T) {
 	})
 
 	t.Run("expired bearer token redirects despite valid signature", func(t *testing.T) {
-		mw := OIDCMiddleware(verifier)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		mw := OIDCMiddleware(verifier, true)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Error("handler ran with an expired token")
 		}))
 		w := serve(t, mw, sign(time.Now().Add(-time.Minute), "alice"))
 		if w.Code != http.StatusFound || !strings.HasPrefix(w.Header().Get("Location"), "/login?redirect=") {
 			t.Errorf("expired token: code %d, location %q", w.Code, w.Header().Get("Location"))
+		}
+	})
+
+	// Without a built-in login there is no /login to send anyone to: a 401
+	// is what an authenticating proxy needs to see to re-authenticate.
+	t.Run("login disabled answers 401 for missing and invalid tokens", func(t *testing.T) {
+		next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Error("handler ran for an unauthenticated request")
+		})
+		mw := OIDCMiddleware(verifier, false)(next)
+		w := serve(t, mw, sign(time.Now().Add(-time.Minute), "alice"))
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expired token, login disabled: code %d, want 401", w.Code)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/gists", nil)
+		w = httptest.NewRecorder()
+		mw.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("missing token, login disabled: code %d, want 401", w.Code)
 		}
 	})
 }

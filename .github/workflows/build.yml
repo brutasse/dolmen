@@ -31,7 +31,9 @@ jobs:
       - run: go test -tags e2e ./e2e/
 
   release:
-    if: github.event_name == 'push'
+    # Belt and braces beyond the push filter: only trunk moves :latest, only
+    # tags create releases; workflow_dispatch runs tests without publishing.
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -40,22 +42,29 @@ jobs:
       packages: write
     env:
       IMAGE: ghcr.io/${{ github.repository }} # must stay lowercase for ghcr
+      VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to ghcr.io
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Multi-arch in one build: the Dockerfile cross-compiles natively via
+      # TARGETARCH.
       - name: Build and push image
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            docker build -t "${IMAGE}:${GITHUB_REF_NAME}" .
-            docker push "${IMAGE}:${GITHUB_REF_NAME}"
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              --build-arg VERSION="${VERSION}" \
+              -t "${IMAGE}:${GITHUB_REF_NAME}" --push .
           else
-            docker build -t "${IMAGE}:latest" .
-            docker push "${IMAGE}:latest"
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              --build-arg VERSION="${VERSION}" \
+              -t "${IMAGE}:latest" --push .
           fi
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -67,8 +76,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o dolmen .
-            tar -czf "dolmen_${GITHUB_REF_NAME}_linux_${arch}.tar.gz" dolmen
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o dolmen .
+            tar -czf "dolmen_${GITHUB_REF_NAME}_linux_${arch}.tar.gz" \
+              dolmen LICENSE README.md
           done
 
       - name: Create GitHub Release
@@ -76,3 +87,57 @@ jobs:
         run: gh release create "${GITHUB_REF_NAME}" dolmen_*.tar.gz --title "${GITHUB_REF_NAME}" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Boots exactly what was just published against the same s3mock + Dex
+  # versions the dev stack uses, and asserts the binary answers over HTTP.
+  smoke:
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    services:
+      s3mock:
+        image: adobe/s3mock:5.2.3
+        ports: ["9090:9090"]
+        env:
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: gists
+      dex:
+        image: dexidp/dex:v2.37.0
+        ports: ["5556:5556"]
+        volumes:
+          - configs/dex-config.yaml:/dex-config.yaml:ro
+        args: ["dex", "serve", "/dex-config.yaml"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to ghcr.io
+        run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the published image
+        env:
+          IMAGE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+        run: |
+          docker pull "ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+          docker run -d --name smoke --network host \
+            -v "$PWD/configs/example.yaml:/config/dolmen.yaml:ro" \
+            -e OIDC_CLIENT_SECRET=secret \
+            -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
+            "ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz && break || sleep 1
+            [ "$i" = 30 ] && { docker logs smoke; exit 1; }
+          done
+
+      - name: Assert the app answers
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)
+          if [ "$code" != 302 ]; then
+            docker logs smoke
+            echo "GET / returned ${code}, want 302 to login"
+            exit 1
+          fi
+          docker rm -f smoke

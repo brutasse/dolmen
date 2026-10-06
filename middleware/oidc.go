@@ -27,24 +27,34 @@ func opaqueUserID(sub string) string {
 
 // OIDCMiddleware validates OIDC tokens and resolves an opaque user ID from
 // the mandatory sub claim; the email claim goes along as display metadata.
-func OIDCMiddleware(verifier *oidc.IDTokenVerifier) func(http.Handler) http.Handler {
+// loginEnabled is false when the app has no built-in login flow (no client
+// secret): then a missing or invalid token answers 401 instead of a /login
+// redirect, so an authenticating proxy sees a status it can act on and
+// re-authenticate the user.
+func OIDCMiddleware(verifier *oidc.IDTokenVerifier, loginEnabled bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/login" || r.URL.Path == "/callback" {
 				next.ServeHTTP(w, r)
 				return
 			}
+			reject := func() {
+				if loginEnabled {
+					target := url.QueryEscape(r.URL.Path + "?" + r.URL.RawQuery)
+					http.Redirect(w, r, "/login?redirect="+target, http.StatusFound)
+					return
+				}
+				http.Error(w, "authentication required", http.StatusUnauthorized)
+			}
 			token := extractToken(r)
 			if token == "" {
-				redirectURL := url.QueryEscape(r.URL.Path + "?" + r.URL.RawQuery)
-				http.Redirect(w, r, "/login?redirect="+redirectURL, http.StatusFound)
+				reject()
 				return
 			}
 
 			idToken, err := verifier.Verify(r.Context(), token)
 			if err != nil {
-				redirectURL := url.QueryEscape(r.URL.Path + "?" + r.URL.RawQuery)
-				http.Redirect(w, r, "/login?redirect="+redirectURL, http.StatusFound)
+				reject()
 				return
 			}
 
