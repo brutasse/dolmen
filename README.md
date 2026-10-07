@@ -66,9 +66,11 @@ CDN. `go build` is the whole build.
   textarea as editable content. Everything else uploads from the browser
   straight to S3 over a presigned URL, so the bytes never reach the app
   server. The app infers the file name; a paste that carries no name becomes
-  `pasted-1.png` and counting. The row then shows an "attached" badge, and
-  extra files in one drop or paste become extra rows. A drop or paste that
-  would replace a row you filled shows a chip first, with Replace, Add as
+  `pasted-1.png` and counting. The row then shows an "attached" badge. A
+  paste of several files fills the empty rows first, then adds new rows,
+  like a drop on the page; a single-file paste targets the row you are
+  typing in, like a drop on that row. A drop or paste that would replace a
+  row you filled shows a chip first, with Replace, Add as
   new, and Cancel; empty rows and new rows fill without asking. The `#` grip
   reorders rows before you save. This all needs JavaScript; the text flow
   works without it.

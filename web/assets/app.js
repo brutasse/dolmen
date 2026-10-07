@@ -415,6 +415,13 @@
     var planned = null; // entry previewed as the landing row
     var hovered = null; // entry the pointer is over
     var dragDepth = 0;
+    function distributeFiles(files) { // page resolver: empty rows first, then new
+        var empties = emptyEntries(); // snapshot: async fills must not re-hit a row
+        files.forEach(function (file) {
+            if (empties.length) handleDroppedFile(empties.shift(), file);
+            else newEntry(file);
+        });
+    }
     function markPlanned(entry) {
         if (planned === entry) return;
         if (planned) planned.classList.remove('dragtarget');
@@ -472,23 +479,21 @@
         if (entry) {
             gestureOnEntry(entry, files); // chips itself if it would clobber
         } else {
-            var empties = emptyEntries(); // snapshot: async fills must not re-hit a row
-            files.forEach(function (file) {
-                if (empties.length) handleDroppedFile(empties.shift(), file);
-                else newEntry(file);
-            });
+            distributeFiles(files);
         }
         clearFileDragUI();
     });
     document.addEventListener('dragend', clearFileDragUI);
 
     // --- Paste and the replace chip. ---------------------------------------
-    // A paste carrying files behaves like a drop: inside a row it targets
-    // that row, anywhere else it takes the page resolver (empty rows first,
-    // then new entries). A gesture that would clobber a non-empty row arms
-    // a chip (Replace / Add as new / Cancel) and waits; the newest gesture
-    // on a row re-arms it, and saving is blocked until every chip on the
-    // page is answered. Plain text pastes are never intercepted.
+    // A paste carrying one file behaves like a drop on a row: it targets the
+    // focused row. A paste carrying several files behaves like a drop on the
+    // page (pointer is unknowable for a paste): each file lands in the first
+    // still-empty entry, overflow files become new entries. A gesture that
+    // would clobber a non-empty row arms a chip (Replace / Add as new /
+    // Cancel) and waits; the newest gesture on a row re-arms it, and saving
+    // is blocked until every chip on the page is answered. Plain text
+    // pastes are never intercepted.
     function newEntry(file) {
         var en = window.gistAddEntry ? window.gistAddEntry() : null;
         if (en) handleDroppedFile(en, file);
@@ -594,15 +599,11 @@
         if (!files.length) return; // plain text pastes normally, untouched
         e.preventDefault(); // keep blob: junk out of the textareas
         files = files.map(normalizePasted);
-        var entry = e.target.closest && e.target.closest('.file-entry');
+        var entry = files.length > 1 ? null : e.target.closest && e.target.closest('.file-entry');
         if (entry) {
             gestureOnEntry(entry, files);
         } else if (filesWrap) {
-            var empties = emptyEntries();
-            files.forEach(function (file) {
-                if (empties.length) handleDroppedFile(empties.shift(), file);
-                else newEntry(file);
-            });
+            distributeFiles(files);
         }
     });
 
