@@ -8,6 +8,8 @@ purpose: exercise every renderer feature
 
 This file exercises everything this gist renders. The metadata table above is
 **YAML front matter**; hover any heading to get its **permalink anchor**.
+Heading ids come from the heading text or an explicit `{#id}` suffix — the
+section below opens with `## Basics {#basics}`.
 
 - [Basics](#basics)
 - [Task lists](#task-lists)
@@ -22,15 +24,16 @@ This file exercises everything this gist renders. The metadata table above is
 - [Raw HTML](#raw-html)
 - [What is not rendered](#what-is-not-rendered)
 
-## Basics
+## Basics {#basics}
 
 *Emphasis*, **strong, with ***nested*** emphasis*, and ~~strikethrough~~.
 Inline `code` stays monospaced. A single newline flows into the same line,
 while two trailing spaces force a hard
 break — right here.
 
-Bare URLs autolink: https://example.com/autolinked and www.example.com, as
-does <https://example.com/explicit>. Reference links work too, as does
+Bare URLs and mail addresses autolink: https://example.com/autolinked,
+www.example.com, showcase@example.com, as does
+<https://example.com/explicit>. Reference links work too, as does
 [goldmark][goldmark-ref], the parser behind this.
 
 > A plain blockquote. Blockquotes nest:

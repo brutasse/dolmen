@@ -3,6 +3,8 @@ package handlers
 import (
 	"strings"
 	"testing"
+
+	htmlrenderer "github.com/yuin/goldmark/renderer/html"
 )
 
 func TestRenderCodeFileByExtension(t *testing.T) {
@@ -362,5 +364,69 @@ func TestRenderMarkdownFrontMatter(t *testing.T) {
 	}
 	if strings.Contains(body, "<hr>") || strings.Contains(body, "<h2") {
 		t.Error("front matter delimiters leaked into body")
+	}
+}
+
+func TestRenderMarkdownHeadingAttributes(t *testing.T) {
+	// parser.WithAttribute: "# Heading {#custom-id}" overrides the slug,
+	// like GitHub. Unknown attribute names die in the heading attribute
+	// filter and the sanitizer.
+	fr := newFileRenderer()
+	res := fr.Render("d.md", "# Section {#custom-id}\n\n# Unsafe {onclick=steal}\n")
+	body := string(res.Body)
+	if !strings.Contains(body, `id="custom-id"`) {
+		t.Errorf("explicit heading id lost: %s", body)
+	}
+	if !strings.Contains(body, `<a class="heading-anchor" href="#custom-id"`) {
+		t.Error("permalink missing for explicit id")
+	}
+	if strings.Contains(body, "onclick") || strings.Contains(body, "steal") {
+		t.Errorf("heading attribute injection survived: %s", body)
+	}
+	if !strings.Contains(body, ">Unsafe<a") {
+		t.Errorf("heading with attribute mangled: %s", body)
+	}
+}
+
+func TestRenderMarkdownAutolinks(t *testing.T) {
+	fr := newFileRenderer()
+	res := fr.Render("d.md", "Ping https://example.com/x, www.example.com, or bob@example.com.\n")
+	body := string(res.Body)
+	if !strings.Contains(body, `href="https://example.com/x"`) {
+		t.Error("bare URL not autolinked")
+	}
+	if !strings.Contains(body, `href="http://www.example.com"`) {
+		t.Error("www address not autolinked")
+	}
+	if !strings.Contains(body, `href="mailto:bob@example.com"`) {
+		t.Error("mail address not autolinked (goldmark Linkify default)")
+	}
+}
+
+func TestRenderMarkdownDataURLImage(t *testing.T) {
+	// SVG data-URI images are the canonical img-XSS. The renderer runs
+	// goldmark in unsafe mode (raw HTML for the sanitizer to gate), so
+	// goldmark passes such URLs through and displayPolicy is what blocks
+	// the data: scheme. Pin that end to end.
+	fr := newFileRenderer()
+	res := fr.Render("d.md",
+		"![svg](data:image/svg+xml;base64,PHN2Zy8+PGVtYmVkLz48L3N2Zz4=)\n\n"+
+			"<img src=\"data:image/svg+xml,<svg onload=steal()/>\">\n")
+	body := string(res.Body)
+	if strings.Contains(strings.ToLower(body), "data:image") {
+		t.Errorf("data: image URL survived: %s", body)
+	}
+	if strings.Contains(body, "steal") {
+		t.Error("script text leaked")
+	}
+}
+
+func TestGoldmarkSVGDataURLIsDangerous(t *testing.T) {
+	// Pinned to goldmark >= v1.8.6: that release stopped classifying
+	// data:image/svg+xml as safe. displayPolicy blocks data: anyway; this
+	// keeps the goldmark-side check honest should the unsafe flag or the
+	// policy ever change. Fails on goldmark < v1.8.6.
+	if !htmlrenderer.IsDangerousURL([]byte("data:image/svg+xml;base64,PHN2Zy8+")) {
+		t.Error("goldmark treats SVG data URIs as safe; need >= v1.8.6")
 	}
 }

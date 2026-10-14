@@ -131,6 +131,10 @@ func (fr *fileRenderer) renderMarkdown(name, content string) FileRender {
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
+			// "# Heading {#id .class}" suffixes, like GitHub: the heading
+			// attribute filter drops unknown names, displayPolicy bounds
+			// id and class downstream.
+			parser.WithAttribute(),
 			// before footnote (101) and link (1000) inline parsers;
 			// transformers: 900 avoids footnote's 999
 			parser.WithInlineParsers(util.Prioritized(&sizedImageParser{}, 100)),

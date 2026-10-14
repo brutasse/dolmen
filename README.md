@@ -27,9 +27,10 @@ CDN. `go build` is the whole build.
   afterwards, so the `s3.bucket` setting must name a bucket the app owns
   alone.
 - **Rendering**: Markdown supports GFM tables, strikethrough, task lists,
-  autolinks, footnotes, `:emoji:` shortcodes, GitHub alerts
-  (`> [!NOTE]`-style blockquotes), heading permalink anchors, `![alt](url
-  =WxH)` image sizing, and YAML front matter rendered as a table. Raw HTML
+  autolinks for URLs and mail addresses, footnotes, `:emoji:` shortcodes,
+  GitHub alerts (`> [!NOTE]`-style blockquotes), heading permalink anchors
+  with `{#id}` overrides, `![alt](url =WxH)` image sizing, and YAML front
+  matter rendered as a table. Raw HTML
   is sanitized to a safe subset like GitHub: `<details>` collapsibles,
   `<kbd>`, and friends survive; scripts, frames, and event handlers don't.
   Code files get syntax highlighting with line numbers, driven by the file
