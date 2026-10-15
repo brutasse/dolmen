@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// splitFrontMatter consumes a leading YAML front-matter block ("---" line to
+// SplitFrontMatter consumes a leading YAML front-matter block ("---" line to
 // "---" or "..." line). It returns the table markup plus remaining source;
 // when the block is absent or the top level is not a scalar-keyed mapping,
 // the source passes through untouched with an empty table. Values that are
@@ -18,8 +18,10 @@ import (
 // invalid front-matter block must fall through to normal Markdown parsing,
 // and by the time any transformer or block parser could inspect it, the
 // "---" delimiters are already thematic breaks or setext heading
-// underlines. Convert applies it.
-func splitFrontMatter(src string) (string, string) {
+// underlines. Convert applies it; callers running the GFM extender on their
+// own pipeline must call it first, or front matter parses as a setext
+// heading.
+func SplitFrontMatter(src string) (string, string) {
 	if !strings.HasPrefix(src, "---\n") {
 		return "", src
 	}

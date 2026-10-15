@@ -1,6 +1,9 @@
 package markdown
 
 import (
+	"net/url"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -377,5 +380,92 @@ func TestGoldmarkSVGDataURLIsDangerous(t *testing.T) {
 	// policy ever change. Fails on goldmark < v1.8.6.
 	if !htmlrenderer.IsDangerousURL([]byte("data:image/svg+xml;base64,PHN2Zy8+")) {
 		t.Error("goldmark treats SVG data URIs as safe; need >= v1.8.6")
+	}
+}
+
+func TestHeadingSlugs(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, want, not string
+	}{
+		{"underscore", "# role_id", `id="role_id"`, ""},
+		{"accented", "# Comité exécutif", `id="comité-exécutif"`, ""},
+		{"cjk", "# 東京 Tokyo", `id="東京-tokyo"`, ""},
+		{"pure-cjk", "# 東京", `id="東京"`, ""},
+		{"digit-dot", "# 5. Kafka", `id="5-kafka"`, ""},
+		{"collapse-comma", "# Hello , World", `id="hello-world"`, ""},
+		{"collapse-dashes", "# C -- D", `id="c-d"`, ""},
+		{"trim-edge-dashes", "# - Dash", `id="dash"`, ""},
+		{"emoji", "# :tada: party", `id="party"`, ""},
+		{"setext", "Title\n=====\n", `id="title"`, ""},
+		{"math-skipped", `# $x_i$ y`, `id="y"`, ""},
+		{
+			// the URL must not bake itself into the id, and the
+			// self-link must resolve against the text slug.
+			"link-in-heading", "#### [Release Notes](#release-notes)",
+			`id="release-notes"`, "release-notesrelease-notes",
+		},
+		{"collision", "# Hello World\n\n# Hello World\n", `id="hello-world-1"`, ""},
+		{"empty-fallback", "# !!!\n\n# !!!\n", `id="heading-1"`, ""},
+		{
+			// {#custom} wins and reserves the name: the plain
+			// "foo" heading behind it must dedup.
+			"custom-reserves", "# A {#foo}\n\n# foo\n", `id="foo-1"`, "",
+		},
+	} {
+		body, _ := Convert(tc.src)
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("%s: %q missing %s", tc.name, tc.src, tc.want)
+		}
+		if tc.not != "" && strings.Contains(body, tc.not) {
+			t.Errorf("%s: %q must not contain %q: %s", tc.name, tc.src, tc.not, body)
+		}
+	}
+}
+
+func TestFragmentLinksResolve(t *testing.T) {
+	// Every in-page link in the corpus fixture must land on a real id,
+	// including headings whose slugs are non-ASCII (the sanitizer keeps
+	// them) or taken from a self-link's text.
+	src, err := os.ReadFile("testdata/fragment-links.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := Convert(string(src))
+	ids := map[string]bool{}
+	for _, m := range regexp.MustCompile(`id="([^"]+)"`).FindAllStringSubmatch(body, -1) {
+		ids[m[1]] = true
+	}
+	for _, m := range regexp.MustCompile(`href="#([^"]+)"`).FindAllStringSubmatch(body, -1) {
+		// goldmark percent-escapes link destinations; browsers percent-
+		// decode fragments before matching them against ids. Decode here
+		// to compare the way a browser resolves the link.
+		href, err := url.PathUnescape(m[1])
+		if err != nil {
+			t.Errorf("fragment link %q is not decodable", m[1])
+			continue
+		}
+		if !ids[href] {
+			t.Errorf("fragment link %q (%s) has no target", m[1], href)
+		}
+	}
+}
+
+func TestFrontMatterNoPhantomHeadings(t *testing.T) {
+	// The shape that made a site builder see 672 phantom H1s: front
+	// matter whose closing "---" underlines "orphan: true" as a setext
+	// heading when the split is skipped. SplitFrontMatter consumes it.
+	fmTable, body := SplitFrontMatter("---\norphan: true\n---\n\n# Real heading\n")
+	if !strings.Contains(fmTable, `<th>orphan</th><td>true</td>`) {
+		t.Errorf("front matter not split: %q", fmTable)
+	}
+	if strings.Contains(body, "---") {
+		t.Errorf("delimiters left in body: %q", body)
+	}
+	rendered, _ := Convert("---\norphan: true\n---\n\n# Real heading\n")
+	if strings.Contains(rendered, `id="orphan`) {
+		t.Errorf("front matter parsed as setext heading: %s", rendered)
+	}
+	if !strings.Contains(rendered, `id="real-heading"`) {
+		t.Errorf("body after front matter not rendered: %s", rendered)
 	}
 }
