@@ -262,6 +262,15 @@ func TestRenderMarkdownAlerts(t *testing.T) {
 	if !strings.Contains(body, `class="markdown-alert markdown-alert-warning"`) {
 		t.Error("alert class not set")
 	}
+	if !strings.Contains(body, `<p class="markdown-alert-title"><svg`) || !strings.Contains(body, `</svg>Warning</p>`) {
+		t.Error("warning title markup missing")
+	}
+	if !strings.Contains(body, `</svg>Tip</p>`) {
+		t.Error("marker-only alert title missing")
+	}
+	if strings.Count(body, `markdown-alert-title`) != 2 {
+		t.Error("title injected outside alerts")
+	}
 	if strings.Contains(body, "[!WARNING]") {
 		t.Error("alert marker left in output")
 	}

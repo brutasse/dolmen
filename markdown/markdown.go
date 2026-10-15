@@ -100,9 +100,10 @@ func New() goldmark.Markdown {
 }
 
 // Convert renders a whole Markdown document: the optional YAML front
-// matter table, then the body with raw HTML gated by DisplayPolicy and
-// every table wrapped for horizontal scrolling. On render failure it
-// returns the source as escaped preformatted text.
+// matter table, then the body with raw HTML gated by DisplayPolicy, every
+// table wrapped for horizontal scrolling, and alert titles injected (trusted
+// markup, post-sanitize). On render failure it returns the source as escaped
+// preformatted text.
 func Convert(src string) (string, Flags) {
 	fmTable, body := SplitFrontMatter(src)
 	md := New()
@@ -113,7 +114,7 @@ func Convert(src string) (string, Flags) {
 		return plainPre(src), Flags{}
 	}
 	safe := string(policy.SanitizeBytes(out.Bytes()))
-	return fmTable + wrapTables(safe), Needs(doc, source)
+	return fmTable + wrapTables(AddAlertTitles(safe)), Needs(doc, source)
 }
 
 // Needs reports whether the parsed document contains math or mermaid.
