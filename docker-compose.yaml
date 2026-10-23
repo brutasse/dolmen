@@ -10,7 +10,7 @@ services:
       COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: gists
 
   dex:
-    image: dexidp/dex:v2.37.0
+    image: dexidp/dex:v2.46.1
     command: ["dex", "serve", "/dex-config.yaml"]
     ports:
       - "127.0.0.1:5556:5556"
