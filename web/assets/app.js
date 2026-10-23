@@ -374,17 +374,28 @@
         });
     }
     function handleDroppedFile(entry, file) {
+        entry._dropped = true;
         sniffBinary(file).then(function (binary) {
             binary ? uploadAndAttach(entry, file) : attachAsText(entry, file);
         });
     }
+    // The next gesture of the same name may then overwrite the row without
+    // asking, but only while its content is what that gesture put there: typing
+    // in the row takes the permission back. A drop's own input events are
+    // programmatic, so only a trusted event counts as typing.
+    document.addEventListener('input', function (e) {
+        if (!e.isTrusted || e.target.tagName !== 'TEXTAREA') return;
+        var entry = e.target.closest && e.target.closest('.file-entry');
+        if (entry) entry._dropped = false;
+    });
 
     // --- Page-wide file drops and the drag preview. -----------------------
     // Drop on an entry: that entry is replaced (extras become new entries).
-    // Drop anywhere else: each file lands in the first still-empty entry,
-    // overflow files become new entries. While dragging, the exact same
-    // plan is previewed: a page overlay with a one-line sentence, the
-    // planned landing entry (.dragtarget), the hovered entry (.dragover).
+    // Drop anywhere else: a file goes to the entry that already carries its
+    // name, else to the first still-empty entry, else to a new entry.
+    // While dragging, the exact same plan is previewed: a page overlay with a
+    // one-line sentence, the planned landing entry (.dragtarget), the hovered
+    // entry (.dragover).
     function isEmptyEntry(entry) {
         var ni = nameInput(entry);
         var ta = contentArea(entry);
@@ -397,12 +408,61 @@
             filesWrap.querySelectorAll('.file-entry'), isEmptyEntry);
     }
     function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
-    function planSentence(total) {
-        var fill = Math.min(total, emptyEntries().length);
-        var fresh = total - fill;
-        if (!fresh) return 'Will fill ' + plural(fill, 'empty row');
-        if (!fill) return 'Will add ' + plural(fresh, 'new file');
-        return 'Will fill ' + plural(fill, 'empty row') + ', add ' + plural(fresh, 'new file');
+    function hasContent(entry) {
+        var ta = contentArea(entry);
+        var key = entry.querySelector('[name$="_key"]');
+        return !!((ta && ta.value.trim()) || (key && key.value));
+    }
+    function entryNamed(name) {
+        var wanted = (name || '').trim().toLowerCase();
+        if (!wanted || !filesWrap) return null;
+        var entries = filesWrap.querySelectorAll('.file-entry');
+        for (var i = 0; i < entries.length; i++) {
+            var ni = nameInput(entries[i]);
+            if (ni && ni.value.trim().toLowerCase() === wanted) return entries[i];
+        }
+        return null;
+    }
+    // A file whose name an entry already carries belongs to that entry, so a
+    // second gesture carrying it updates the row instead of submitting two
+    // files under one name, which the server rejects. Name matching runs
+    // before the empty-row search, so a name on the page always wins over a
+    // free row. 'confirm' hands the row to the replace chip, because it holds
+    // content no gesture put there; 'replace' and 'fill' overwrite silently.
+    function planFiles(files) {
+        var empties = emptyEntries(); // snapshot: async fills must not re-hit a row
+        return files.map(function (file) {
+            var match = entryNamed(file.name);
+            if (match) {
+                var quiet = match._dropped || !hasContent(match);
+                return { file: file, entry: match, kind: quiet ? 'replace' : 'confirm' };
+            }
+            if (empties.length) return { file: file, entry: empties.shift(), kind: 'fill' };
+            return { file: file, entry: null, kind: 'new' };
+        });
+    }
+    function dragFileList(e) {
+        var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+        if (!files.length) { // no names to resolve: preview a bare count
+            var n = e.dataTransfer.items ? e.dataTransfer.items.length : 1;
+            for (var i = 0; i < n; i++) files.push({ name: '' });
+        }
+        return files;
+    }
+    function planSentence(files) {
+        var counts = { replace: 0, fill: 0, fresh: 0 };
+        var seen = [];
+        planFiles(files).forEach(function (p) {
+            if (!p.entry) { counts.fresh++; return; }
+            if (seen.indexOf(p.entry) >= 0) return; // same name twice, one row
+            seen.push(p.entry);
+            counts[p.kind === 'fill' ? 'fill' : 'replace']++;
+        });
+        var parts = [];
+        if (counts.replace) parts.push('replace ' + plural(counts.replace, 'file'));
+        if (counts.fill) parts.push('fill ' + plural(counts.fill, 'empty row'));
+        if (counts.fresh) parts.push('add ' + plural(counts.fresh, 'new file'));
+        return 'Will ' + parts.join(', ');
     }
     var overlay = null;
     function dropOverlay() {
@@ -421,12 +481,22 @@
     var planned = null; // entry previewed as the landing row
     var hovered = null; // entry the pointer is over
     var dragDepth = 0;
-    function distributeFiles(files) { // page resolver: empty rows first, then new
-        var empties = emptyEntries(); // snapshot: async fills must not re-hit a row
-        files.forEach(function (file) {
-            if (empties.length) handleDroppedFile(empties.shift(), file);
-            else newEntry(file);
+    function distributeFiles(files) { // page resolver, see planFiles
+        planFiles(files).forEach(function (p) {
+            if (p.kind === 'new') newEntry(p.file);
+            else if (p.kind === 'confirm') gestureOnEntry(p.entry, [p.file]);
+            else handleDroppedFile(p.entry, p.file);
         });
+    }
+    function plannedRow(plan) { // replacing a row beats an empty row for the hint
+        var row = null;
+        var fill = null;
+        plan.forEach(function (p) {
+            if (!p.entry) return;
+            if (p.kind === 'fill') { if (!fill) fill = p.entry; }
+            else if (!row) row = p.entry;
+        });
+        return row || fill;
     }
     function markPlanned(entry) {
         if (planned === entry) return;
@@ -468,9 +538,9 @@
             ov.querySelector('.drop-hint').textContent =
                 'Will replace ' + (nameInput(entry).value.trim() || 'this file');
         } else {
-            markPlanned(emptyEntries()[0] || null);
-            var n = e.dataTransfer.items ? e.dataTransfer.items.length : 1;
-            ov.querySelector('.drop-hint').textContent = planSentence(n);
+            var files = dragFileList(e);
+            markPlanned(plannedRow(planFiles(files)));
+            ov.querySelector('.drop-hint').textContent = planSentence(files);
         }
         ov.classList.add('active');
     });
@@ -494,12 +564,14 @@
     // --- Paste and the replace chip. ---------------------------------------
     // A paste carrying one file behaves like a drop on a row: it targets the
     // focused row. A paste carrying several files behaves like a drop on the
-    // page (pointer is unknowable for a paste): each file lands in the first
-    // still-empty entry, overflow files become new entries. A gesture that
-    // would clobber a non-empty row arms a chip (Replace / Add as new /
-    // Cancel) and waits; the newest gesture on a row re-arms it, and saving
-    // is blocked until every chip on the page is answered. Plain text
-    // pastes are never intercepted.
+    // page (pointer is unknowable for a paste): each file goes to the entry
+    // that already carries its name, else to the first still-empty entry, else
+    // to a new entry. A gesture that would clobber a row arms a chip (Replace
+    // / Add as new / Cancel) and waits; the exception is a same-name row whose
+    // content a previous gesture put there, which is overwritten quietly. The
+    // newest gesture on a row re-arms its chip, and saving is blocked until
+    // every chip on the page is answered. Plain text pastes are never
+    // intercepted.
     function newEntry(file) {
         var en = window.gistAddEntry ? window.gistAddEntry() : null;
         if (en) handleDroppedFile(en, file);

@@ -68,14 +68,18 @@ CDN. `go build` is the whole build.
   textarea as editable content. Everything else uploads from the browser
   straight to S3 over a presigned URL, so the bytes never reach the app
   server. The app infers the file name; a paste that carries no name becomes
-  `pasted-1.png` and counting. The row then shows an "attached" badge. A
-  paste of several files fills the empty rows first, then adds new rows,
-  like a drop on the page; a single-file paste targets the row you are
-  typing in, like a drop on that row. A drop or paste that would replace a
-  row you filled shows a chip first, with Replace, Add as
-  new, and Cancel; empty rows and new rows fill without asking. The `#` grip
-  reorders rows before you save. This all needs JavaScript; the text flow
-  works without it.
+  `pasted-1.png` and counting. The row then shows an "attached" badge. A drop
+  or a single-file paste on a row targets that row; a paste of several files
+  behaves like a drop on the page. There, each file goes to the row that
+  already carries its name, so dropping or pasting a file again updates that
+  row instead of storing two files under one name. A file with no row of its
+  name takes the first empty row, and extra files get new rows. The app
+  overwrites a matched row without asking when an earlier drop or paste put
+  its content there and no typing changed it. A drop or paste that would
+  replace a row you filled shows a chip first, with Replace, Add as new, and
+  Cancel; empty rows and new rows fill without asking. The `#` grip reorders
+  rows before you save. This all needs JavaScript; the text flow works
+  without it.
 - **Inline media**: On the gist page, images embed inline and audio and
   video get native players. A PDF renders in an iframe, and any other
   binary gets a download link that keeps the file name. The bytes come from
