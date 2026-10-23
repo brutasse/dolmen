@@ -3,7 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>{{template "title" .}}</title>
+    <script>
+        /* Runs before the stylesheets so a manual choice never flashes the
+           wrong palette; app.js owns the toggle, this only reads the stored
+           value back. No key means follow the OS, which is what the
+           color-scheme default in app.css does. try/catch because
+           localStorage itself throws when storage is blocked. */
+        try {
+            var theme = localStorage.getItem("theme");
+            if (theme === "light" || theme === "dark") {
+                document.documentElement.dataset.theme = theme;
+            }
+        } catch (e) {}
+    </script>
     <link rel="icon" href="{{asset "favicon.svg"}}" type="image/svg+xml">
     <link rel="stylesheet" href="{{asset "app.css"}}">
     <link rel="stylesheet" href="{{asset "chroma.css"}}">
@@ -16,6 +30,7 @@
             <nav class="head-nav">
                 <a class="btn btn-primary btn-sm" href="/"><svg class="i" aria-hidden="true"><use href="#i-add"/></svg>New gist</a>
                 <a class="pill" href="/gists">My gists</a>
+                <button type="button" class="btn btn-secondary btn-sm theme-toggle hidden" aria-label="Theme: system"><svg class="i" aria-hidden="true"><use href="#i-theme-auto"/></svg><span class="i-label">System</span></button>
                 <span class="user" title="Signed in as {{.Email}}"><span class="avatar">{{initial .Email}}</span>{{localpart .Email}}</span>
             </nav>
         </div>

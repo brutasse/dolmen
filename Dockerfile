@@ -3,7 +3,7 @@
 # plus the CA certs distroless ships (OIDC and S3 are HTTPS). The build
 # stage runs on the builder's own platform and cross-compiles via GOARCH
 # (TARGETARCH), so multi-arch images need no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.26.1 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 
 ARG TARGETARCH
 ARG VERSION

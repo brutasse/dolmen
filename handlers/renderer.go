@@ -7,18 +7,18 @@ import (
 	"net/url"
 	"strings"
 
-	"dolmen/markdown"
 	"dolmen/models"
 	"github.com/alecthomas/chroma/v2"
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/brutasse/petroglyph"
 )
 
 // fileRenderer turns one gist file into display HTML: markdown rendering
-// via the dolmen/markdown package, syntax highlighting by file name for
+// via the petroglyph package, syntax highlighting by file name for
 // anything chroma recognizes, and an escaped <pre> otherwise. Markdown
-// sanitizing and math/mermaid detection live in markdown.Convert; the
+// sanitizing and math/mermaid detection live in petroglyph.Convert; the
 // flags it returns let the template load only the vendored JS the page
 // actually needs.
 type fileRenderer struct {
@@ -54,7 +54,7 @@ func newFileRenderer() *fileRenderer {
 
 func (fr *fileRenderer) Render(name, content string) FileRender {
 	if models.IsMarkdown(name) {
-		body, flags := markdown.Convert(content)
+		body, flags := petroglyph.Convert(content)
 		return FileRender{
 			Name:         name,
 			Body:         template.HTML(body),

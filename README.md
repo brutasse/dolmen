@@ -26,15 +26,16 @@ CDN. `go build` is the whole build.
   versioning on your bucket at startup. You cannot turn versioning off
   afterwards, so the `s3.bucket` setting must name a bucket the app owns
   alone.
-- **Rendering**: Markdown supports GFM tables, strikethrough, task lists,
-  autolinks for URLs and mail addresses, footnotes, `:emoji:` shortcodes,
-  GitHub alerts (`> [!NOTE]`-style blockquotes), heading permalink anchors
-  with `{#id}` overrides, `![alt](url =WxH)` image sizing, and YAML front
-  matter rendered as a table. Raw HTML
-  is sanitized to a safe subset like GitHub: `<details>` collapsibles,
-  `<kbd>`, and friends survive; scripts, frames, and event handlers don't.
-  Code files get syntax highlighting with line numbers, driven by the file
-  extension. Fenced code blocks in Markdown get highlighting too.
+- **Rendering**: Markdown rendering and sanitizing come from
+  [petroglyph](https://github.com/brutasse/petroglyph), a separate Go module.
+  It gives GFM tables, strikethrough, task lists, autolinks for URLs and mail
+  addresses, footnotes, `:emoji:` shortcodes, GitHub alerts
+  (`> [!NOTE]`-style blockquotes), heading permalink anchors built by GitHub's
+  anchor rule, `![alt](url =WxH)` image sizing, and YAML front matter rendered
+  as a table. Raw HTML is sanitized to a safe subset like GitHub: `<details>`
+  collapsibles, `<kbd>`, and friends survive; scripts, frames, and event
+  handlers don't. Code files get syntax highlighting with line numbers, driven
+  by the file extension. Fenced code blocks in Markdown get highlighting too.
 - **Naming**: The first file's name titles the gist. A submitted file without
   a name becomes `gistfile.txt`, `gistfile.1.txt`, and so on. Two files with
   the same name are a save error; the app never renames a file silently. The
@@ -247,18 +248,35 @@ The binary embeds everything the UI needs — templates, stylesheet, fonts,
 MathJax, Mermaid. There is no build step and no external request:
 `go build` is the whole thing.
 
-- `web/assets/app.css` is hand-written. Light and dark themes follow
-  `prefers-color-scheme` through CSS custom properties. Edit it directly.
+- `web/assets/app.css` is hand-written. Colors are `light-dark()` custom
+  properties resolved by `color-scheme`: `:root` follows the OS, and
+  `html[data-theme]` forces one theme. The header button cycles system, light,
+  dark, and the choice survives reloads under the `theme` key in
+  `localStorage` — the layout head reads it in a small inline script that runs
+  before the stylesheets, so a forced theme never flashes the other palette
+  first. Keep the plain light tokens in `:root`: they are what a browser
+  without `light-dark()` (before Chrome 123, Safari 17.5, Firefox 120) renders,
+  since custom properties do not fail at parse time.
 - Fonts are Inter (text) and JetBrains Mono (code): self-hosted variable
   woff2 subsets under `web/assets/fonts/`, each with its OFL license.
 - Mermaid 12.1.0 (MIT) and MathJax 3.2.2 (Apache-2.0) are vendored under
-  `web/assets/vendor/`, each with its license file.
-- The highlight colors in `web/assets/chroma.css` come from the same Go
-  style the renderer uses. Regenerate them with:
-
-```
-go run ./tools/genchroma > web/assets/chroma.css
-```
+  `web/assets/vendor/`, each with its license file. Mermaid is the client-side
+  diagram renderer. It has no theme hook here — the vendored build paints
+  mermaid's default theme, whose colours assume a white ground — so each
+  `pre.mermaid` is a white card in both themes rather than a diagram that
+  inherits the dark page.
+- Markdown rendering is not in this repository. It is the
+  [petroglyph](https://github.com/brutasse/petroglyph) Go module,
+  `github.com/brutasse/petroglyph`, pinned in `go.mod`; `handlers/renderer.go`
+  calls `petroglyph.Convert` and acts on the math and mermaid flags it
+  returns.
+- The highlight colors in `web/assets/chroma.css` are GitHub's prettylights
+  palette, hand-written as one `--code-*` custom property per token family with
+  a `light-dark()` pair each, so code follows the same `color-scheme` switch as
+  the rest of the page and the sheet carries no theme selectors of its own. A
+  token rule names a variable and never a colour; `TestChromaPalette` holds both
+  halves of the palette to the same variable list and checks each colour against
+  the code surface for WCAG AA contrast.
 
 ## Acknowledgements
 

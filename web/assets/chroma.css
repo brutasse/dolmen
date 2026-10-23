@@ -1,74 +1,99 @@
-/* Background */ .bg { background-color: #ffffff; }
-/* PreWrapper */ .chroma { background-color: #ffffff; }
-/* Error */ .chroma .err { color: #a61717; background-color: #e3d2d2 }
-/* LineTableTD */ .chroma .lntd { vertical-align: top; padding: 0; margin: 0; border: 0; }
-/* LineTable */ .chroma .lntable { border-spacing: 0; padding: 0; margin: 0; border: 0; }
-/* LineHighlight */ .chroma .hl { background-color: #e5e5e5 }
-/* LineNumbersTable */ .chroma .lnt { white-space: pre; user-select: none; margin-right: 0.4em; padding: 0 0.4em 0 0.4em;color: #7f7f7f }
-/* LineNumbers */ .chroma .ln { white-space: pre; user-select: none; margin-right: 0.4em; padding: 0 0.4em 0 0.4em;color: #7f7f7f }
-/* Line */ .chroma .line { display: flex; }
-/* Keyword */ .chroma .k { color: #000000; font-weight: bold }
-/* KeywordConstant */ .chroma .kc { color: #000000; font-weight: bold }
-/* KeywordDeclaration */ .chroma .kd { color: #000000; font-weight: bold }
-/* KeywordNamespace */ .chroma .kn { color: #000000; font-weight: bold }
-/* KeywordPseudo */ .chroma .kp { color: #000000; font-weight: bold }
-/* KeywordReserved */ .chroma .kr { color: #000000; font-weight: bold }
-/* KeywordType */ .chroma .kt { color: #445588; font-weight: bold }
-/* NameAttribute */ .chroma .na { color: #008080 }
-/* NameBuiltin */ .chroma .nb { color: #0086b3 }
-/* NameBuiltinPseudo */ .chroma .bp { color: #999999 }
-/* NameClass */ .chroma .nc { color: #445588; font-weight: bold }
-/* NameConstant */ .chroma .no { color: #008080 }
-/* NameDecorator */ .chroma .nd { color: #3c5d5d; font-weight: bold }
-/* NameEntity */ .chroma .ni { color: #800080 }
-/* NameException */ .chroma .ne { color: #990000; font-weight: bold }
-/* NameFunction */ .chroma .nf { color: #990000; font-weight: bold }
-/* NameLabel */ .chroma .nl { color: #990000; font-weight: bold }
-/* NameNamespace */ .chroma .nn { color: #555555 }
-/* NameTag */ .chroma .nt { color: #000080 }
-/* NameVariable */ .chroma .nv { color: #008080 }
-/* NameVariableClass */ .chroma .vc { color: #008080 }
-/* NameVariableGlobal */ .chroma .vg { color: #008080 }
-/* NameVariableInstance */ .chroma .vi { color: #008080 }
-/* LiteralString */ .chroma .s { color: #dd1144 }
-/* LiteralStringAffix */ .chroma .sa { color: #dd1144 }
-/* LiteralStringBacktick */ .chroma .sb { color: #dd1144 }
-/* LiteralStringChar */ .chroma .sc { color: #dd1144 }
-/* LiteralStringDelimiter */ .chroma .dl { color: #dd1144 }
-/* LiteralStringDoc */ .chroma .sd { color: #dd1144 }
-/* LiteralStringDouble */ .chroma .s2 { color: #dd1144 }
-/* LiteralStringEscape */ .chroma .se { color: #dd1144 }
-/* LiteralStringHeredoc */ .chroma .sh { color: #dd1144 }
-/* LiteralStringInterpol */ .chroma .si { color: #dd1144 }
-/* LiteralStringOther */ .chroma .sx { color: #dd1144 }
-/* LiteralStringRegex */ .chroma .sr { color: #009926 }
-/* LiteralStringSingle */ .chroma .s1 { color: #dd1144 }
-/* LiteralStringSymbol */ .chroma .ss { color: #990073 }
-/* LiteralNumber */ .chroma .m { color: #009999 }
-/* LiteralNumberBin */ .chroma .mb { color: #009999 }
-/* LiteralNumberFloat */ .chroma .mf { color: #009999 }
-/* LiteralNumberHex */ .chroma .mh { color: #009999 }
-/* LiteralNumberInteger */ .chroma .mi { color: #009999 }
-/* LiteralNumberIntegerLong */ .chroma .il { color: #009999 }
-/* LiteralNumberOct */ .chroma .mo { color: #009999 }
-/* Operator */ .chroma .o { color: #000000; font-weight: bold }
-/* OperatorWord */ .chroma .ow { color: #000000; font-weight: bold }
-/* Comment */ .chroma .c { color: #999988; font-style: italic }
-/* CommentHashbang */ .chroma .ch { color: #999988; font-style: italic }
-/* CommentMultiline */ .chroma .cm { color: #999988; font-style: italic }
-/* CommentSingle */ .chroma .c1 { color: #999988; font-style: italic }
-/* CommentSpecial */ .chroma .cs { color: #999999; font-weight: bold; font-style: italic }
-/* CommentPreproc */ .chroma .cp { color: #999999; font-weight: bold; font-style: italic }
-/* CommentPreprocFile */ .chroma .cpf { color: #999999; font-weight: bold; font-style: italic }
-/* GenericDeleted */ .chroma .gd { color: #000000; background-color: #ffdddd }
-/* GenericEmph */ .chroma .ge { color: #000000; font-style: italic }
-/* GenericError */ .chroma .gr { color: #aa0000 }
-/* GenericHeading */ .chroma .gh { color: #999999 }
-/* GenericInserted */ .chroma .gi { color: #000000; background-color: #ddffdd }
-/* GenericOutput */ .chroma .go { color: #888888 }
-/* GenericPrompt */ .chroma .gp { color: #555555 }
-/* GenericStrong */ .chroma .gs { font-weight: bold }
-/* GenericSubheading */ .chroma .gu { color: #aaaaaa }
-/* GenericTraceback */ .chroma .gt { color: #aa0000 }
-/* GenericUnderline */ .chroma .gl { text-decoration: underline }
-/* TextWhitespace */ .chroma .w { color: #bbbbbb }
+/* Token colours for the chroma classes the renderer writes: GitHub's
+   prettylights palette, the same list colophon ships, in this app's own theme
+   idiom — a plain light value in :root so a browser without light-dark() keeps
+   a working palette, and the light-dark() twins behind @supports. The
+   color-scheme property app.css sets is the whole switch here too, so a manual
+   choice in the theme control beats the OS without a media query in this file.
+
+   A token rule names a variable and never a colour, so the two palettes cannot
+   drift by one rule; TestChromaPalette checks every variable a rule uses is
+   defined in both blocks, and that each colour clears AA contrast on the code
+   surface it is drawn on. Operators, output, and prompt text carry no rule at
+   all and take the surrounding text colour, the way GitHub renders them. */
+
+:root {
+  --code-keyword: #cf222e; --code-entity: #8250df; --code-variable: #953800;
+  --code-tag: #116329; --code-string: #0a3069; --code-constant: #0550ae;
+  --code-comment: #57606a; --code-linenum: #59636e;
+  --code-error: #cf222e; --code-error-bg: #ffebe9;
+  --code-deleted: #86181d; --code-deleted-bg: #ffebe9;
+  --code-inserted: #116329; --code-inserted-bg: #dafbe1;
+}
+
+@supports (color: light-dark(red, blue)) {
+  :root {
+    --code-keyword: light-dark(#cf222e, #ff7b72);
+    --code-entity: light-dark(#8250df, #d2a8ff);
+    --code-variable: light-dark(#953800, #ffa657);
+    --code-tag: light-dark(#116329, #7ee787);
+    --code-string: light-dark(#0a3069, #a5d6ff);
+    --code-constant: light-dark(#0550ae, #79c0ff);
+    --code-comment: light-dark(#57606a, #8b949e);
+    --code-linenum: light-dark(#59636e, #9198a1);
+    --code-error: light-dark(#cf222e, #ff7b72);
+    --code-error-bg: light-dark(#ffebe9, rgba(248, 81, 73, .15));
+    --code-deleted: light-dark(#86181d, #ffa198);
+    --code-deleted-bg: light-dark(#ffebe9, rgba(248, 81, 73, .15));
+    --code-inserted: light-dark(#116329, #7ee787);
+    --code-inserted-bg: light-dark(#dafbe1, rgba(63, 185, 80, .15));
+  }
+}
+
+/* var(--code-bg) is what app.css paints an unhighlighted fence with, so the two
+   kinds of code block agree through the theme rather than through this file. */
+.chroma { background-color: var(--code-bg) }
+
+/* A highlighted file gets one .line row per source line, holding the .ln count
+   and the .cl code; as flex items, a wrapped line of code wraps under the
+   gutter instead of around it. */
+.chroma .line { display: flex }
+
+/* The gutter is decoration: unselectable, so a selection that starts there
+   does not drag numbers into the clipboard, and on the muted ramp because the
+   numbers a reader glances at once are the least significant text on screen. */
+.chroma .ln {
+  color: var(--code-linenum); white-space: pre; user-select: none;
+  margin-right: .4em; padding: 0 .4em;
+}
+
+/* Keyword.Constant, .Declaration, .Namespace, .Pseudo, .Reserved, and .Type: one
+   keyword colour, because a keyword's colour does not change with the slot it
+   fills and the separate type colour was a difference no reader saw. */
+.chroma .k, .chroma .kc, .chroma .kd, .chroma .kn, .chroma .kp, .chroma .kr,
+.chroma .kt { color: var(--code-keyword) }
+
+.chroma .nc, .chroma .nd, .chroma .ne, .chroma .nf, .chroma .nl, .chroma .nn {
+  color: var(--code-entity);
+}
+
+.chroma .na, .chroma .nb, .chroma .bp, .chroma .no, .chroma .nv, .chroma .vc,
+.chroma .vg, .chroma .vi { color: var(--code-variable) }
+
+.chroma .nt { color: var(--code-tag) }
+
+.chroma .s, .chroma .sa, .chroma .sb, .chroma .sc, .chroma .dl, .chroma .sd,
+.chroma .s2, .chroma .sh, .chroma .si, .chroma .sx, .chroma .sr, .chroma .s1,
+.chroma .ss { color: var(--code-string) }
+
+/* An escape is a constant to GitHub, so it joins the numbers rather than the
+   string it sits inside. */
+.chroma .m, .chroma .mb, .chroma .mf, .chroma .mh, .chroma .mi, .chroma .il,
+.chroma .mo, .chroma .se { color: var(--code-constant) }
+
+.chroma .c, .chroma .ch, .chroma .cm, .chroma .c1, .chroma .cs, .chroma .cp,
+.chroma .cpf { color: var(--code-comment); font-style: italic }
+
+.chroma .err { color: var(--code-error); background-color: var(--code-error-bg) }
+.chroma .gr, .chroma .gt { color: var(--code-error) }
+
+.chroma .gd { color: var(--code-deleted); background-color: var(--code-deleted-bg) }
+.chroma .gi { color: var(--code-inserted); background-color: var(--code-inserted-bg) }
+
+.chroma .gh, .chroma .gu { color: var(--code-constant); font-weight: 600 }
+
+.chroma .ge { font-style: italic }
+.chroma .gs { font-weight: 600 }
+.chroma .gl { text-decoration: underline }
+
+/* A stray space takes the border colour, so it stays a mark and not a glyph. */
+.chroma .w { color: var(--border) }

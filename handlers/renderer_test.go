@@ -38,3 +38,24 @@ func TestRenderScriptGating(t *testing.T) {
 		t.Error("plain text flagged needs")
 	}
 }
+
+// The mermaid fence is what loads Mermaid: the flag comes from petroglyph's
+// document walk, the markup is the container mermaid renders into. A code file
+// must never carry either flag, or the view page ships vendor JS it does not
+// need.
+func TestRenderMermaidGating(t *testing.T) {
+	fr := newFileRenderer()
+
+	md := fr.Render("a.md", "# t\n\n```mermaid\ngraph TD\n```\n")
+	if !md.NeedsMermaid {
+		t.Error("markdown mermaid fence did not set NeedsMermaid")
+	}
+	if !strings.Contains(string(md.Body), `<pre class="mermaid">`) {
+		t.Error("no pre.mermaid container for the fence")
+	}
+
+	code := fr.Render("a.go", "package main\n")
+	if code.NeedsMermaid || code.NeedsMath {
+		t.Error("code file flagged needs")
+	}
+}

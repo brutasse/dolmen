@@ -18,12 +18,24 @@
 }
 
 :root {
+    /* Light values stand alone so a browser without light-dark() keeps a
+       working light theme: custom properties do not fail at parse time, so
+       an unparsable value here would win and take every color with it. The
+       color-scheme property is the whole theme switch: the @supports block
+       below lets light-dark() resolve against it, and html[data-theme] (set
+       by the head script from localStorage) overrides the "follow the OS"
+       default. */
+    color-scheme: light dark;
     --bg: #fafbfc;
     --panel: #ffffff;
     --fg: #1f2328;
     --muted: #59636e;
     --border: #d1d9e0;
     --accent: #0969da;
+    /* White-on-accent surfaces (.btn-primary, .avatar) need the emphasis
+       ramp, not --accent: the light-link accent is too dark against white in
+       dark mode, where #1f6feb is the one that keeps #fff legible. */
+    --accent-btn: #0969da;
     --danger: #cf222e;
     --code-bg: #f6f8fa;
     --notice-bg: #fff8c5;
@@ -36,24 +48,28 @@
     --font-text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
-@media (prefers-color-scheme: dark) {
+@supports (color: light-dark(red, blue)) {
     :root {
-        --bg: #0d1117;
-        --panel: #151b23;
-        --fg: #e6edf3;
-        --muted: #9198a1;
-        --border: #3d444d;
-        --accent: #4493f8;
-        --danger: #ff7b72;
-        --notice-bg: #4d2d00;
-        --notice-border: #9e6a03;
-        --alert-note: #4c8ede;
-        --alert-tip: #3fb950;
-        --alert-important: #a371f7;
-        --alert-warning: #d29922;
-        --alert-caution: #f85149;
+        --bg: light-dark(#fafbfc, #0d1117);
+        --panel: light-dark(#ffffff, #151b23);
+        --fg: light-dark(#1f2328, #e6edf3);
+        --muted: light-dark(#59636e, #9198a1);
+        --border: light-dark(#d1d9e0, #3d444d);
+        --accent: light-dark(#0969da, #4493f8);
+        --accent-btn: light-dark(#0969da, #1f6feb);
+        --danger: light-dark(#cf222e, #ff7b72);
+        --code-bg: light-dark(#f6f8fa, #0d1117);
+        --notice-bg: light-dark(#fff8c5, #4d2d00);
+        --notice-border: light-dark(#d4a72c, #9e6a03);
+        --alert-note: light-dark(#0969da, #4c8ede);
+        --alert-tip: light-dark(#1a7f37, #3fb950);
+        --alert-important: light-dark(#8250df, #a371f7);
+        --alert-warning: light-dark(#9a6700, #d29922);
+        --alert-caution: light-dark(#cf222e, #f85149);
     }
 }
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { font-family: var(--font-text); }
@@ -77,7 +93,7 @@ h1, h2, h3 { line-height: 1.25; }
 .brand-mark { height: 1.25em; width: auto; }
 .head-nav { display: flex; align-items: center; gap: .9rem; }
 .user { display: inline-flex; align-items: center; gap: .45rem; color: var(--muted); font-size: .85rem; }
-.avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 600; font-size: .8rem; text-transform: uppercase; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent-btn); color: #fff; font-weight: 600; font-size: .8rem; text-transform: uppercase; }
 .pill { display: inline-flex; align-items: center; height: 1.6rem; padding: 0 .7rem; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border); color: var(--muted); font-size: .85rem; text-decoration: none; }
 .pill:hover { color: var(--accent); }
 
@@ -89,7 +105,7 @@ h1, h2, h3 { line-height: 1.25; }
 /* Buttons and quiet links */
 .btn { display: inline-flex; align-items: center; padding: .3rem .8rem; border-radius: 6px; border: 1px solid transparent; font: inherit; font-size: .85rem; text-decoration: none; cursor: pointer; }
 .btn-sm { padding: .15rem .6rem; height: 1.6rem; }
-.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary { background: var(--accent-btn); color: #fff; }
 .btn-secondary { background: var(--panel); color: var(--fg); border-color: var(--border); }
 .btn.btn-danger { color: var(--danger); }
 button:disabled { opacity: .5; cursor: not-allowed; }
@@ -185,7 +201,13 @@ label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .
 pre { margin: 0 0 .8rem; padding: .75rem .9rem; border-radius: 6px; background: var(--code-bg); overflow-x: auto; font-family: var(--font-mono); font-size: .82rem; line-height: 1.5; }
 .file-body pre code { background: none; border: none; padding: 0; font-size: inherit; }
 .file-body pre.chroma { border: 1px solid var(--border); background-color: var(--code-bg); }
-pre.mermaid { background: none; border: none; text-align: center; }
+/* Diagrams: the container mermaid replaces with an SVG. The vendored build
+   ships mermaid's default theme, whose colours are authored for a white
+   ground, so the card stays white in both themes rather than inheriting the
+   dark page canvas. */
+pre.mermaid {
+    background: #fff; border: 1px solid var(--border); text-align: center;
+}
 
 /* Markdown extras: permalink anchors, task lists, footnotes, alerts, front matter, collapsibles */
 .heading-anchor { visibility: hidden; margin-left: .35rem; color: var(--accent); text-decoration: none; font-weight: 400; }
@@ -199,12 +221,16 @@ pre.mermaid { background: none; border: none; text-align: center; }
 .file-body .markdown-alert { color: var(--fg); border-left: 3px solid var(--muted); background: var(--code-bg); padding: .6rem .9rem; margin: 0 0 .8rem; border-radius: 0 6px 6px 0; }
 .file-body .markdown-alert > :first-child { margin-top: 0; }
 .file-body .markdown-alert > :last-child { margin-bottom: 0; }
-.file-body .markdown-alert::before { display: block; font-weight: 600; margin-bottom: .35rem; }
-.file-body .markdown-alert-note { border-left-color: var(--alert-note); } .file-body .markdown-alert-note::before { content: "Note"; color: var(--alert-note); }
-.file-body .markdown-alert-tip { border-left-color: var(--alert-tip); } .file-body .markdown-alert-tip::before { content: "Tip"; color: var(--alert-tip); }
-.file-body .markdown-alert-important { border-left-color: var(--alert-important); } .file-body .markdown-alert-important::before { content: "Important"; color: var(--alert-important); }
-.file-body .markdown-alert-warning { border-left-color: var(--alert-warning); } .file-body .markdown-alert-warning::before { content: "Warning"; color: var(--alert-warning); }
-.file-body .markdown-alert-caution { border-left-color: var(--alert-caution); } .file-body .markdown-alert-caution::before { content: "Caution"; color: var(--alert-caution); }
+.file-body .markdown-alert-note { --alert-fg: var(--alert-note); border-left-color: var(--alert-fg); }
+.file-body .markdown-alert-tip { --alert-fg: var(--alert-tip); border-left-color: var(--alert-fg); }
+.file-body .markdown-alert-important { --alert-fg: var(--alert-important); border-left-color: var(--alert-fg); }
+.file-body .markdown-alert-warning { --alert-fg: var(--alert-warning); border-left-color: var(--alert-fg); }
+.file-body .markdown-alert-caution { --alert-fg: var(--alert-caution); border-left-color: var(--alert-fg); }
+/* Title paragraph petroglyph injects (octicon + label): flex keeps the icon
+   off the text, 1em sizing ties the octicon to the label, and currentColor
+   fill picks up --alert-fg. */
+.file-body .markdown-alert-title { display: flex; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-weight: 600; color: var(--alert-fg); }
+.file-body .markdown-alert-title svg { width: 1em; height: 1em; flex: none; }
 .file-body table.frontmatter th { color: var(--muted); white-space: nowrap; }
 .file-body details { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: .5rem .9rem; margin: 0 0 .8rem; }
 .file-body details > :last-child { margin-bottom: 0; }

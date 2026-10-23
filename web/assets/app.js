@@ -118,6 +118,12 @@
         }
         return loadScript('/static/vendor/tex-svg.js');
     }
+    // Preview diagrams are run explicitly: startOnLoad stays off because a
+    // preview pane is re-rendered on every click of the Preview tab, and
+    // mermaid.run takes the nodes to render. securityLevel 'strict' keeps the
+    // diagram text, which is untrusted, from emitting html labels or links.
+    // The view page needs no equivalent call: its script tag initializes
+    // mermaid with startOnLoad on.
     function ensureMermaid() {
         return loadScript('/static/vendor/mermaid.min.js').then(function () {
             window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
@@ -622,4 +628,43 @@
     document.querySelectorAll('time.rel-time').forEach(function (t) {
         t.textContent = relTime(t.getAttribute('datetime'));
     });
+
+    // --- Theme toggle: system -> light -> dark, remembered in localStorage.
+    // The head script already applied the stored choice before paint, so this
+    // only paints the button and wires the cycle. "system" removes the
+    // attribute instead of writing a value: app.css then resolves every
+    // light-dark() token through the plain color-scheme default, which follows
+    // the OS.
+    var THEMES = [
+        ['system', 'i-theme-auto', 'System'],
+        ['light', 'i-theme-light', 'Light'],
+        ['dark', 'i-theme-dark', 'Dark']
+    ];
+    var themeBtn = document.querySelector('.theme-toggle');
+    if (themeBtn) {
+        var themeSpec = function (name) {
+            for (var i = 0; i < THEMES.length; i++) {
+                if (THEMES[i][0] === name) return THEMES[i];
+            }
+            return THEMES[0];
+        };
+        var paintTheme = function (name) {
+            var s = themeSpec(name);
+            if (s[0] === 'system') delete document.documentElement.dataset.theme;
+            else document.documentElement.dataset.theme = s[0];
+            themeBtn.querySelector('use').setAttribute('href', '#' + s[1]);
+            themeBtn.querySelector('.i-label').textContent = s[2];
+            themeBtn.setAttribute('aria-label', 'Theme: ' + s[2].toLowerCase());
+            try {
+                if (s[0] === 'system') localStorage.removeItem('theme');
+                else localStorage.setItem('theme', s[0]);
+            } catch (e) {} // storage blocked: the choice still applies this page
+        };
+        themeBtn.classList.remove('hidden');
+        paintTheme(document.documentElement.dataset.theme || 'system');
+        themeBtn.addEventListener('click', function () {
+            var i = THEMES.indexOf(themeSpec(document.documentElement.dataset.theme || 'system'));
+            paintTheme(THEMES[(i + 1) % THEMES.length][0]);
+        });
+    }
 })();

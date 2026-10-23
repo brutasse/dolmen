@@ -8,8 +8,8 @@ purpose: exercise every renderer feature
 
 This file exercises everything this gist renders. The metadata table above is
 **YAML front matter**; hover any heading to get its **permalink anchor**.
-Heading ids come from the heading text or an explicit `{#id}` suffix — the
-section below opens with `## Basics {#basics}`.
+Heading ids follow GitHub's anchor rule: punctuation goes, every space leaves
+one hyphen, and a hyphen the author typed stays.
 
 - [Basics](#basics)
 - [Task lists](#task-lists)
@@ -24,7 +24,7 @@ section below opens with `## Basics {#basics}`.
 - [Raw HTML](#raw-html)
 - [What is not rendered](#what-is-not-rendered)
 
-## Basics {#basics}
+## Basics
 
 *Emphasis*, **strong, with ***nested*** emphasis*, and ~~strikethrough~~.
 Inline `code` stays monospaced. A single newline flows into the same line,
@@ -143,8 +143,8 @@ this info string matches no lexer and falls back to plain text
 
 ## Diagrams
 
-A ` ```mermaid ` fence loads the bundled Mermaid library only on pages that
-need it:
+A ` ```mermaid ` fence sets `Flags.Mermaid`, so the page loads the vendored
+[Mermaid](https://mermaid.js.org) library only when the document needs one:
 
 ```mermaid
 graph LR
@@ -157,15 +157,14 @@ graph LR
 ## Math
 
 Inline math survives markdown parsing — `$x_i$` keeps its underscore instead
-of emphasizing, and `\(y^2\)` works with TeX delimiters too. Display math:
+of emphasizing. Display math:
 
 $$
 \frac{d}{dx}\left( \int_0^x f(u)\,du \right) = f(x)
 $$
 
-\[
-e^{i\pi} + 1 = 0
-\]
+The two dollar forms are the only delimiters, because they are the only ones
+GitHub reads: `\(y^2\)` is an escaped parenthesis here too.
 
 Money is not math: "$5 and $6" are amounts, not delimiters, and code spans
 like `$f(x)$` are left alone.
@@ -196,6 +195,10 @@ but lose the markup.
 </details>
 
 Shortcut keys are real markup: press <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+
+A named anchor survives the sanitizer, which is how a moved heading keeps the
+fragment other pages used: <a name="old-heading"></a>[Jump to the old
+target](#old-heading).
 
 ## What is not rendered
 
