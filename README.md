@@ -114,6 +114,7 @@ chain applies (environment variables, shared config file, instance profile).
 | `oidc.client_secret` | no | Name of the environment variable holding the OAuth client secret |
 | `s3.bucket` | yes | Bucket that holds the gists; the app enables its versioning and CORS on boot |
 | `s3.endpoint` | no | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS |
+| `s3.cache_size` | no | Memory budget for the read cache, for example `128MB` or `512MiB`. A bare number is bytes. Defaults to `128MB`, and `0` turns caching off |
 | `listen` | no | Listen address. Defaults to `:8080` |
 | `base_url` | no | Externally reachable origin; builds the OAuth redirect URI. Defaults to `http://localhost<listen>` |
 
@@ -131,6 +132,27 @@ enforces the token's own `exp` claim.
 
 The app always sends path-style S3 requests and pins the SDK region to
 `us-east-1`. S3-compatible providers route by endpoint, so this works.
+
+### Read cache
+
+The app keeps an LRU cache of gist objects in RAM, bounded by
+`s3.cache_size`. The app never answers a read from it without proof: a HEAD
+request confirms that the object still has the ETag of the cached bytes. The
+app refetches a rewritten object and answers 404 for a deleted one. So the
+cache removes object transfer and JSON parsing, while the request rate stays
+the same. A warm view of one gist still costs two HEAD requests, and S3 bills
+a HEAD like a GET.
+
+Requests go down in two other places. Parallel requests for one object share a
+single fetch, so a burst against one hot gist reads that object once instead of
+once per request. A listing also carries the ETag of every key in it. A return
+visit to `/gists` then costs one `ListObjectsV2` call, however many gists you
+have, because the app reads again only the objects whose ETag changed. Writes
+through this process refresh the cache immediately, so you always see your own
+save.
+
+The budget covers cached bytes, not the whole process. Set `GOMEMLIMIT` for
+that.
 
 ## Run locally
 
@@ -232,8 +254,9 @@ there.
   `{name, key, mime, size}`. Each save creates a new S3 object version.
 - `index/{gist-id}` — a pointer object whose content is the owner id. It
   makes the owner lookup for cross-user views cheap. If the pointer is
-  missing, the app finds the owner with a prefix scan and writes the pointer
-  back.
+  missing, the gist answers 404. The app never scans the `gists/` user
+  prefixes to recover an owner, because one view could then cost about 1000
+  requests.
 - `uploads/{user}/{uuid}` — dropped attachments, one object per file with the
   content type pinned by the server. A gist can reference an upload only
   under the saving user's own prefix, and only if the object exists. A

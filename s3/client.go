@@ -1,7 +1,6 @@
 package s3
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +19,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"golang.org/x/sync/singleflight"
 )
 
 // listObjectsAPI is the single S3 call ListGists makes; unit tests inject a
@@ -33,6 +33,10 @@ type Client struct {
 	s3Client *s3.Client
 	list     listObjectsAPI
 	bucket   string
+	cache    *readCache
+	// flight coalesces concurrent reads of the same key into one request to
+	// the backend. Its zero value is ready to use.
+	flight singleflight.Group
 }
 
 var (
@@ -47,6 +51,10 @@ var (
 func NewClient(ctx context.Context, sc dolmencfg.S3Config) (*Client, error) {
 	if sc.Bucket == "" {
 		return nil, errors.New("s3: bucket is required")
+	}
+	maxBytes, err := sc.CacheMaxBytes()
+	if err != nil {
+		return nil, err
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx,
@@ -70,7 +78,10 @@ func NewClient(ctx context.Context, sc dolmencfg.S3Config) (*Client, error) {
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})
-	return &Client{s3Client: client, list: client, bucket: sc.Bucket}, nil
+	if maxBytes > 0 {
+		log.Printf("s3: read cache %d bytes; cached objects are validated against their ETag on every read", maxBytes)
+	}
+	return &Client{s3Client: client, list: client, bucket: sc.Bucket, cache: newReadCache(maxBytes)}, nil
 }
 
 // EnsureConfigured adapts the bucket to what the app needs: it enables
@@ -273,25 +284,131 @@ func isNotFound(err error) bool {
 	return false
 }
 
-func (c *Client) getRaw(ctx context.Context, key string) ([]byte, error) {
-	resp, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &c.bucket,
-		Key:    &key,
+// fetchTimeout bounds a cache miss once it has been detached from the
+// requesting caller, so an unresponsive backend cannot hold a coalesced fetch
+// open indefinitely.
+const fetchTimeout = 30 * time.Second
+
+// detached is the context a shared fetch runs under. The fetch outlives
+// whichever request happened to lead it, so a browser that hangs up cannot
+// fail the callers waiting on the same result.
+func detached(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
+}
+
+// getObject reads an object body and its ETag. A non-empty versionID selects
+// a stored version. A missing key is ErrNotFound.
+func (c *Client) getObject(ctx context.Context, key, versionID string) ([]byte, string, error) {
+	input := &s3.GetObjectInput{Bucket: &c.bucket, Key: &key}
+	if versionID != "" {
+		input.VersionId = &versionID
+	}
+	resp, err := c.s3Client.GetObject(ctx, input)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, "", ErrNotFound
+		}
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, unquoteETag(aws.ToString(resp.ETag)), nil
+}
+
+// headETag returns the ETag of the object that key names now, or ErrNotFound
+// if it no longer exists. This is the metadata check that keeps a cached body
+// from outliving the object it came from.
+func (c *Client) headETag(ctx context.Context, key string) (string, error) {
+	out, err := c.s3Client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &c.bucket, Key: &key})
+	if err != nil {
+		if isNotFound(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return unquoteETag(aws.ToString(out.ETag)), nil
+}
+
+// loadObject returns the body of the current version of key. A cached body is
+// served only after the backend reports the same ETag, so a hit costs one HEAD
+// request and no object transfer. knownETag is an ETag the caller already
+// holds for this object, from a listing; pass "" when it holds none.
+//
+// Concurrent readers of one key share a single fetch, and what they get is
+// that one byte slice: callers may read it but must not modify it.
+func (c *Client) loadObject(ctx context.Context, key, knownETag string) ([]byte, error) {
+	cacheKey := objectCacheKey(key)
+	value, etag, ok := c.cache.get(cacheKey)
+	switch {
+	case !ok:
+		// cold: fetch below
+	case knownETag != "" && knownETag == etag:
+		return value, nil // the listing already proved this body current
+	case etag == "":
+		// The backend sent no ETag with this body, so it has nothing to prove
+		// with: refetch rather than trust the cache.
+	default:
+		current, err := c.headETag(ctx, key)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				c.cache.invalidate(cacheKey)
+			}
+			return nil, err
+		}
+		if current == etag {
+			return value, nil
+		}
+	}
+	return c.fetch(ctx, cacheKey, key, "")
+}
+
+// loadVersion returns the body of one stored version. Version content never
+// changes, so a cached body needs no validation and lives until evicted.
+func (c *Client) loadVersion(ctx context.Context, key, versionID string) ([]byte, error) {
+	cacheKey := versionCacheKey(key, versionID)
+	if value, _, ok := c.cache.get(cacheKey); ok {
+		return value, nil
+	}
+	return c.fetch(ctx, cacheKey, key, versionID)
+}
+
+// fetch reads one object through the coalescing group and caches what it
+// learns. Errors are shared with the waiters too, which is right: they are all
+// asking the backend the same question at the same moment.
+func (c *Client) fetch(ctx context.Context, cacheKey, key, versionID string) ([]byte, error) {
+	v, err, _ := c.flight.Do(cacheKey, func() (any, error) {
+		fctx, cancel := detached(ctx)
+		defer cancel()
+		data, etag, err := c.getObject(fctx, key, versionID)
+		if err != nil {
+			return nil, err
+		}
+		c.cache.put(cacheKey, data, etag)
+		return data, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return v.([]byte), nil
 }
 
+// putRaw writes an object. The write goes through to the cache: this process
+// just produced the object, so it can answer the next read without fetching
+// back what it has in hand.
 func (c *Client) putRaw(ctx context.Context, key, body string) error {
-	_, err := c.s3Client.PutObject(ctx, &s3.PutObjectInput{
+	out, err := c.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: &c.bucket,
 		Key:    &key,
 		Body:   strings.NewReader(body),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	c.cache.put(objectCacheKey(key), []byte(body), unquoteETag(aws.ToString(out.ETag)))
+	return nil
 }
 
 // resolveOwner returns the owner of a gist, resolved solely via the index
@@ -300,21 +417,18 @@ func (c *Client) putRaw(ctx context.Context, key, body string) error {
 // authenticated request fan out into ~1000 S3 reads (repeatable), and no
 // pre-index gists exist to recover.
 func (c *Client) resolveOwner(ctx context.Context, id string) (string, error) {
-	owner, err := c.getRaw(ctx, indexKey(id))
-	if err == nil {
-		return strings.TrimSpace(string(owner)), nil
+	owner, err := c.loadObject(ctx, indexKey(id), "")
+	if err != nil {
+		return "", err
 	}
-	if isNotFound(err) {
-		return "", ErrNotFound
-	}
-	return "", err
+	return strings.TrimSpace(string(owner)), nil
 }
 
-// ListGists lists gists owned by userID
-// listKeys pages through ListObjectsV2 (continuation token) and returns
-// every key under prefix. One ListObjectsV2 response is capped at 1000 keys.
-func (c *Client) listKeys(ctx context.Context, prefix string) ([]string, error) {
-	var keys []string
+// listKeys pages through ListObjectsV2 (continuation token) and returns every
+// object under prefix with the ETag the listing carries for it. One
+// ListObjectsV2 response is capped at 1000 keys.
+func (c *Client) listKeys(ctx context.Context, prefix string) ([]objectInfo, error) {
+	var objs []objectInfo
 	var token *string
 	for {
 		resp, err := c.list.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
@@ -327,31 +441,55 @@ func (c *Client) listKeys(ctx context.Context, prefix string) ([]string, error) 
 		}
 		for _, obj := range resp.Contents {
 			if obj.Key != nil {
-				keys = append(keys, *obj.Key)
+				objs = append(objs, objectInfo{key: *obj.Key, etag: unquoteETag(aws.ToString(obj.ETag))})
 			}
 		}
 		if resp.IsTruncated == nil || !*resp.IsTruncated {
-			return keys, nil
+			return objs, nil
 		}
 		token = resp.NextContinuationToken
 		if token == nil {
-			return keys, nil // defensive: truncated without a token
+			return objs, nil // defensive: truncated without a token
 		}
 	}
 }
 
+// objectInfo is one key from a listing plus the ETag that says whether a
+// cached body still describes that key.
+type objectInfo struct {
+	key  string
+	etag string
+}
+
+// listObjects is listKeys behind the coalescing group, so parallel requests
+// from one user cost one listing.
+func (c *Client) listObjects(ctx context.Context, prefix string) ([]objectInfo, error) {
+	v, err, _ := c.flight.Do(listingCacheKey(prefix), func() (any, error) {
+		lctx, cancel := detached(ctx)
+		defer cancel()
+		return c.listKeys(lctx, prefix)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]objectInfo), nil
+}
+
 func (c *Client) ListGists(ctx context.Context, userID string) ([]models.Gist, error) {
 	prefix := fmt.Sprintf("gists/%s/", userID)
-	keys, err := c.listKeys(ctx, prefix)
+	objs, err := c.listObjects(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
 
 	// N+1 by design: gist JSON is the source of truth (title, files), so
-	// listing fetches each object. Fine for personal scale.
+	// listing reads each object. Fine for personal scale, and cheap on repeat
+	// visits because the listing carried every key's ETag: an object is read
+	// only when its ETag differs from the cached one, so a warm list page
+	// costs one request in total.
 	var gists []models.Gist
-	for _, key := range keys {
-		gist, err := c.getGistByKey(ctx, key)
+	for _, obj := range objs {
+		gist, err := c.getGistByKey(ctx, obj.key, obj.etag)
 		if err != nil {
 			continue // skip unreadable objects
 		}
@@ -362,12 +500,9 @@ func (c *Client) ListGists(ctx context.Context, userID string) ([]models.Gist, e
 	return gists, nil
 }
 
-func (c *Client) getGistByKey(ctx context.Context, key string) (*models.Gist, error) {
-	data, err := c.getRaw(ctx, key)
+func (c *Client) getGistByKey(ctx context.Context, key, knownETag string) (*models.Gist, error) {
+	data, err := c.loadObject(ctx, key, knownETag)
 	if err != nil {
-		if isNotFound(err) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 	var gist models.Gist
@@ -384,7 +519,7 @@ func (c *Client) GetGist(ctx context.Context, id string) (*models.Gist, error) {
 	if err != nil {
 		return nil, err
 	}
-	gist, err := c.getGistByKey(ctx, gistKey(owner, id))
+	gist, err := c.getGistByKey(ctx, gistKey(owner, id), "")
 	if err != nil {
 		return nil, err
 	}
@@ -405,12 +540,7 @@ func (c *Client) putGist(ctx context.Context, owner string, gist *models.Gist) e
 	}
 
 	key := gistKey(owner, gist.ID)
-	_, err = c.s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &c.bucket,
-		Key:    &key,
-		Body:   bytes.NewReader(data),
-	})
-	return err
+	return c.putRaw(ctx, key, string(data))
 }
 
 // CreateGist stores a new gist and its owner pointer. If the pointer write
@@ -459,16 +589,34 @@ func (c *Client) DeleteGist(ctx context.Context, userID, id string) error {
 		Bucket: &c.bucket,
 		Key:    aws.String(gistKey(owner, id)),
 	})
+	// Dropped whether the deletes succeeded: an entry for an object this
+	// process tried to remove must not answer a later read from cache.
+	c.cache.invalidate(objectCacheKey(indexKey(id)))
+	c.cache.invalidate(objectCacheKey(gistKey(owner, id)))
 	return err
 }
 
-// ListVersions lists versions of a gist by ID
+// ListVersions lists versions of a gist by ID. Coalesced but never cached: a
+// save adds a version, so a stored answer would hide history. The slice is
+// shared with concurrent callers, which only read and re-slice it.
 func (c *Client) ListVersions(ctx context.Context, id string) ([]models.Version, error) {
 	owner, err := c.resolveOwner(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	key := gistKey(owner, id)
+	v, err, _ := c.flight.Do(listingCacheKey(key), func() (any, error) {
+		lctx, cancel := detached(ctx)
+		defer cancel()
+		return c.listVersions(lctx, id, key)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]models.Version), nil
+}
+
+func (c *Client) listVersions(ctx context.Context, id, key string) ([]models.Version, error) {
 	resp, err := c.s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
 		Bucket: &c.bucket,
 		Prefix: &key,
@@ -482,13 +630,12 @@ func (c *Client) ListVersions(ctx context.Context, id string) ([]models.Version,
 		if v.Key == nil || v.VersionId == nil {
 			continue
 		}
-		version := models.Version{
+		versions = append(versions, models.Version{
 			ID:           id,
 			VersionID:    *v.VersionId,
 			LastModified: *v.LastModified,
 			Size:         *v.Size,
-		}
-		versions = append(versions, version)
+		})
 	}
 	return versions, nil
 }
@@ -499,20 +646,7 @@ func (c *Client) GetVersion(ctx context.Context, id, versionID string) (*models.
 	if err != nil {
 		return nil, err
 	}
-	key := gistKey(owner, id)
-	resp, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket:    &c.bucket,
-		Key:       &key,
-		VersionId: &versionID,
-	})
-	if err != nil {
-		if isNotFound(err) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := c.loadVersion(ctx, gistKey(owner, id), versionID)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1534,4 +1535,62 @@ func TestBlobRoundTrip(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("never-uploaded key: %d, want 400", resp.StatusCode)
 	}
+}
+
+// TestCachedReadRefetchesChangedObject runs the app with its read cache on
+// (the default) and changes a gist object the way a second replica would: a
+// direct write to the bucket that this process never sees. The cached bytes
+// must fail their ETag check and be refetched, so the view shows the new
+// content rather than what the cache holds.
+func TestCachedReadRefetchesChangedObject(t *testing.T) {
+	resetStore(t)
+	b := loginAs(t, alice)
+	id := createGist(t, b, "Cached", [][2]string{{"cached.md", "CACHE-ONE"}})
+
+	// Two views: the first fills the cache, the second answers from it.
+	for i := range 2 {
+		code, body := b.get("/gist/" + id)
+		if code != 200 || !strings.Contains(plainText(body), "CACHE-ONE") {
+			t.Fatalf("view %d: code %d, body: %.200s", i, code, body)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ownerRaw := awsGet(ctx, t, "index/"+id)
+	key := "gists/" + strings.TrimSpace(string(ownerRaw)) + "/" + id + ".json"
+	var gist models.Gist
+	if err := gist.FromJSON(awsGet(ctx, t, key)); err != nil {
+		t.Fatal(err)
+	}
+	gist.Files[0].Content = "CACHE-TWO"
+	data, err := gist.ToJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := awsC.PutObject(ctx, &awss3.PutObjectInput{
+		Bucket: aws.String(bucketName), Key: aws.String(key), Body: bytes.NewReader(data),
+	}); err != nil {
+		t.Fatalf("out-of-band write: %v", err)
+	}
+
+	code, body := b.get("/gist/" + id)
+	if code != 200 || !strings.Contains(plainText(body), "CACHE-TWO") {
+		t.Errorf("view after an out-of-band write: code %d, body: %.200s", code, body)
+	}
+}
+
+func awsGet(ctx context.Context, t *testing.T, key string) []byte {
+	t.Helper()
+	out, err := awsC.GetObject(ctx, &awss3.GetObjectInput{Bucket: aws.String(bucketName), Key: aws.String(key)})
+	if err != nil {
+		t.Fatalf("get %s: %v", key, err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		t.Fatalf("read %s: %v", key, err)
+	}
+	return data
 }

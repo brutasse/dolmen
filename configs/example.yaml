@@ -28,6 +28,10 @@ s3:
   # Values below match the docker-compose dev stack (s3mock).
   bucket: gists
   endpoint: http://localhost:9090
+  # Memory budget for the in-RAM LRU cache of gist objects. A cached object
+  # is read only after a HEAD confirms its ETag, so cached reads are never
+  # stale; a bare size is bytes. Default 128MB, and 0 turns the cache off.
+  cache_size: 128MB
   # Production example (path-style requests are always used):
   # bucket: my-gists
   # endpoint: https://sos-de-fra-1.exo.io

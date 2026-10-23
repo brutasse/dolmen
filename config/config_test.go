@@ -125,3 +125,63 @@ s3:
 		t.Fatalf("set-but-empty secret accepted: %v", err)
 	}
 }
+
+func TestCacheMaxBytesForms(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+	}{
+		{"", 128_000_000}, // DefaultCacheSize
+		{"0", 0},          // caching off
+		{"4096", 4096},    // bare number is bytes
+		{"128MB", 128_000_000},
+		{"512MiB", 512 * 1024 * 1024},
+		{" 1 GiB ", 1 << 30},
+		{"20mib", 20 * 1024 * 1024}, // unit case does not matter
+	} {
+		got, err := S3Config{CacheSize: tc.in}.CacheMaxBytes()
+		if err != nil {
+			t.Errorf("CacheMaxBytes(%q): %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("CacheMaxBytes(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCacheMaxBytesRejectsGarbage(t *testing.T) {
+	for _, in := range []string{
+		"-1MB", "MB", "1e6", "12TBx", "1.5MB",
+		"99999999999999999999",  // does not fit int64
+		"9223372036854775807TB", // fits until the unit is applied
+	} {
+		if _, err := (S3Config{CacheSize: in}).CacheMaxBytes(); err == nil {
+			t.Errorf("CacheMaxBytes(%q) accepted, want error", in)
+		}
+	}
+}
+
+func TestLoadValidatesCacheSize(t *testing.T) {
+	t.Setenv("TEST_CLIENT_SECRET", "x")
+	const head = `
+oidc:
+  issuer: http://localhost:5556/dex
+  client_id: c
+  client_secret: TEST_CLIENT_SECRET
+s3:
+  bucket: b
+`
+	cfg, err := Load(write(t, head+"  cache_size: 256MiB\n"))
+	if err != nil {
+		t.Fatalf("valid cache_size rejected: %v", err)
+	}
+	if got, err := cfg.S3.CacheMaxBytes(); err != nil || got != 256*1024*1024 {
+		t.Errorf("CacheMaxBytes = %d, %v, want 268435456", got, err)
+	}
+
+	if _, err := Load(write(t, head+"  cache_size: twelve\n")); err == nil ||
+		!strings.Contains(err.Error(), "s3.cache_size") {
+		t.Errorf("invalid cache_size accepted or misreported: %v", err)
+	}
+}

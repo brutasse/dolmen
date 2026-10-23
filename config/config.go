@@ -4,8 +4,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -41,6 +43,58 @@ type S3Config struct {
 	// Endpoint points at an S3-compatible provider (Exoscale SOS, s3mock,
 	// ...). Empty means AWS.
 	Endpoint string `yaml:"endpoint"`
+	// CacheSize bounds the in-memory read cache, as a byte size such as
+	// "128MB" or "512MiB"; a bare number is bytes. Empty means
+	// DefaultCacheSize, "0" turns the cache off.
+	CacheSize string `yaml:"cache_size"`
+}
+
+// DefaultCacheSize bounds the read cache when CacheSize is unset. Typical
+// gist objects are a few KiB, so this holds a large personal collection.
+const DefaultCacheSize = "128MB"
+
+var sizeUnits = map[string]int64{
+	"":    1,
+	"b":   1,
+	"kb":  1e3,
+	"mb":  1e6,
+	"gb":  1e9,
+	"tb":  1e12,
+	"kib": 1 << 10,
+	"mib": 1 << 20,
+	"gib": 1 << 30,
+	"tib": 1 << 40,
+}
+
+// CacheMaxBytes resolves CacheSize to a byte budget. An empty CacheSize is
+// DefaultCacheSize; 0 means no cache. Load validates the string, but this
+// stays available for a Config assembled in code, so callers that build
+// S3Config by hand get the default too.
+func (s S3Config) CacheMaxBytes() (int64, error) {
+	size := strings.TrimSpace(s.CacheSize)
+	if size == "" {
+		size = DefaultCacheSize
+	}
+	digits := 0
+	for digits < len(size) && size[digits] >= '0' && size[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return 0, fmt.Errorf("s3.cache_size %q is not a byte size: expected a number like 128MB or 512MiB", s.CacheSize)
+	}
+	n, err := strconv.ParseInt(size[:digits], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("s3.cache_size %q: %w", s.CacheSize, err)
+	}
+	unit := strings.ToLower(strings.TrimSpace(size[digits:]))
+	mult, ok := sizeUnits[unit]
+	if !ok {
+		return 0, fmt.Errorf("s3.cache_size %q: unknown unit %q (use B, KB, MB, GB, TB or the KiB/MiB/GiB/TiB forms)", s.CacheSize, unit)
+	}
+	if n > math.MaxInt64/mult {
+		return 0, fmt.Errorf("s3.cache_size %q overflows int64 bytes", s.CacheSize)
+	}
+	return n * mult, nil
 }
 
 // Load reads and validates the YAML config at path, resolving secret
@@ -99,6 +153,9 @@ func (c *Config) validate() error {
 
 	if c.S3.Bucket == "" {
 		add("s3.bucket is required")
+	}
+	if _, err := c.S3.CacheMaxBytes(); err != nil {
+		add("%v", err)
 	}
 
 	if len(errs) > 0 {
