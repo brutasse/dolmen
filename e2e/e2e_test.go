@@ -44,12 +44,10 @@ import (
 	tc "github.com/testcontainers/testcontainers-go"
 	tcnet "github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"gopkg.in/yaml.v3"
 )
 
 const (
-	dexImage    = "dexidp/dex:v2.37.0"
-	s3mockImage = "adobe/s3mock:5.2.3"
-
 	bucketName = "e2e-gists"
 
 	clientID     = "gist-client"
@@ -64,14 +62,45 @@ const (
 )
 
 var (
-	appURL     string
-	appCfg     config.Config
-	setupErr   error
-	awsC       *awss3.Client
-	containers []tc.Container
-	netw       *tc.DockerNetwork
-	tmpDir     string
+	appURL      string
+	appCfg      config.Config
+	setupErr    error
+	awsC        *awss3.Client
+	containers  []tc.Container
+	netw        *tc.DockerNetwork
+	tmpDir      string
+	dexImage    string
+	s3mockImage string
 )
+
+type composeSpec struct {
+	Services struct {
+		Dex struct {
+			Image string `yaml:"image"`
+		} `yaml:"dex"`
+		S3mock struct {
+			Image string `yaml:"image"`
+		} `yaml:"s3mock"`
+	} `yaml:"services"`
+}
+
+// stackImages reads the image refs from docker-compose.yaml, the one place
+// their versions are pinned for both the dev stack and this suite.
+func stackImages() (dex, s3mock string, err error) {
+	data, err := os.ReadFile("../docker-compose.yaml")
+	if err != nil {
+		return "", "", err
+	}
+	var spec composeSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		return "", "", err
+	}
+	dex, s3mock = spec.Services.Dex.Image, spec.Services.S3mock.Image
+	if dex == "" || s3mock == "" {
+		return "", "", fmt.Errorf("docker-compose.yaml: dex and s3mock must each pin an image, got %q and %q", dex, s3mock)
+	}
+	return dex, s3mock, nil
+}
 
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -103,6 +132,9 @@ func reservePort() (int, net.Listener, error) {
 
 func startStack(ctx context.Context) error {
 	var err error
+	if dexImage, s3mockImage, err = stackImages(); err != nil {
+		return err
+	}
 	netw, err = tcnet.New(ctx)
 	if err != nil {
 		return fmt.Errorf("network: %w", err)

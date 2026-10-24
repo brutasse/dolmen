@@ -1,6 +1,7 @@
 # Local development dependencies: s3mock (S3) and Dex (OIDC) with two static
-# users — the same stack the e2e suite boots, with pinned image versions.
-# See README for the matching app configs/example.yaml.
+# users — the same stack the e2e suite boots, which reads the image refs below
+# from this file, so this is where their versions are pinned. See README for
+# the matching app configs/example.yaml.
 services:
   s3mock:
     image: adobe/s3mock:5.2.3
