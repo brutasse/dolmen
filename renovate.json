@@ -1,4 +1,19 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"]
+  "extends": ["config:recommended", "schedule:weekly"],
+  "description": "Weekly batch (Mondays before 4 AM). Vulnerability-fix PRs ignore the schedule, so a weekly cadence does not delay them.",
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "description": "Digest-pin the build and runtime bases: a floating distroless tag changes the shipped image with no commit.",
+      "matchFileNames": ["Dockerfile"],
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "description": "Land low-risk bumps once CI is green.",
+      "matchUpdateTypes": ["patch", "digest", "pin", "pinDigest"],
+      "automerge": true
+    }
+  ]
 }
