@@ -1,9 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "schedule:weekly"],
-  "description": "Weekly batch (Mondays before 4 AM). Vulnerability-fix PRs ignore the schedule, so a weekly cadence does not delay them.",
+  "extends": ["config:recommended"],
+  "description": "Updates are raised 7 days after release; security fixes and digest/pin updates bypass the cooldown.",
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
+    {
+      "description": "7-day supply-chain cooldown: renovate/stability-days holds the branch back until the release is old enough.",
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "minimumReleaseAge": "7 days",
+      "internalChecksFilter": "strict"
+    },
     {
       "description": "Digest-pin the build and runtime bases: a floating distroless tag changes the shipped image with no commit.",
       "matchFileNames": ["Dockerfile"],
