@@ -11,7 +11,7 @@ require (
 	github.com/aws/smithy-go v1.28.6
 	github.com/brutasse/petroglyph v0.2.0
 	github.com/coreos/go-oidc/v3 v3.17.0
-	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/uuid v1.6.0
 	github.com/moby/moby/api v1.55.0
 	github.com/testcontainers/testcontainers-go v0.44.0
