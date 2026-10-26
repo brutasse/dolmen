@@ -476,6 +476,13 @@ func TestDeleteRestoreRoundtrip(t *testing.T) {
 	if err := c.RestoreGist(ctx, "u1", "abc"); err != nil {
 		t.Fatal(err)
 	}
+	// The tombstone is gone from the bucket, not just hidden behind a delete
+	// marker: a marker no listing would ever return, so it would outlive every
+	// scrub — and a backend that still lists delete-marked keys would keep the
+	// restored gist off the list page.
+	if n := s.versionCount("deleted/u1/abc"); n != 0 {
+		t.Errorf("tombstone versions after restore = %d, want 0", n)
+	}
 	if _, err := c.GetGist(ctx, "abc"); err != nil {
 		t.Fatalf("GetGist after restore: %v", err)
 	}

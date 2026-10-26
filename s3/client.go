@@ -678,7 +678,11 @@ func (c *Client) ListDeleted(ctx context.Context, userID string) ([]DeletedGist,
 // deleted, or someone else deleted, is ErrNotFound. A fresh index write makes
 // the gist current again (a crash before the tombstone lift leaves the gist
 // hidden but this call exactly retryable, never half-restored), and the
-// tombstone lift is what flips the trash back to the list.
+// tombstone lift is what flips the trash back to the list. The lift erases
+// every stored version of the tombstone instead of writing a delete marker: a
+// marker is invisible to listings, so neither a later delete nor scrub would
+// ever remove it, and a backend that still lists a delete-marked key would
+// keep hiding the restored gist.
 func (c *Client) RestoreGist(ctx context.Context, userID, id string) error {
 	if _, err := c.loadObject(ctx, deletedKey(userID, id), ""); err != nil {
 		return err
@@ -686,10 +690,7 @@ func (c *Client) RestoreGist(ctx context.Context, userID, id string) error {
 	if err := c.putRaw(ctx, indexKey(id), userID); err != nil {
 		return err
 	}
-	_, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &c.bucket,
-		Key:    aws.String(deletedKey(userID, id)),
-	})
+	err := c.purgeKey(ctx, deletedKey(userID, id))
 	c.cache.invalidate(objectCacheKey(deletedKey(userID, id)))
 	return err
 }

@@ -459,20 +459,36 @@ func loginAs(t *testing.T, email string) *browser {
 }
 
 // resetStore empties the bucket so tests don't leak state into each other.
+// The bucket is versioned, so a DeleteObject without a VersionId only writes a
+// delete marker: every version stays, and s3mock keeps listing such keys as
+// current while reading them answers NoSuchKey. Scrub reads what a listing
+// says exists and reports an unreadable key, so a reset has to erase versions
+// and delete markers, not hide them.
 func resetStore(t *testing.T) {
 	t.Helper()
+	requireStack(t)
 	resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	p := awss3.NewListObjectsV2Paginator(awsC, &awss3.ListObjectsV2Input{Bucket: aws.String(bucketName)})
+	// Every page is read before anything is deleted: mutating the bucket while
+	// paginating it can skip keys.
+	var objs []s3types.ObjectIdentifier
+	p := awss3.NewListObjectVersionsPaginator(awsC, &awss3.ListObjectVersionsInput{Bucket: aws.String(bucketName)})
 	for p.HasMorePages() {
 		page, err := p.NextPage(resetCtx)
 		if err != nil {
-			t.Fatalf("list objects: %v", err)
+			t.Fatalf("list object versions: %v", err)
 		}
-		for _, obj := range page.Contents {
-			if _, err := awsC.DeleteObject(resetCtx, &awss3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: obj.Key}); err != nil {
-				t.Fatalf("delete object: %v", err)
-			}
+		for _, v := range page.Versions {
+			objs = append(objs, s3types.ObjectIdentifier{Key: v.Key, VersionId: v.VersionId})
+		}
+		for _, m := range page.DeleteMarkers {
+			objs = append(objs, s3types.ObjectIdentifier{Key: m.Key, VersionId: m.VersionId})
+		}
+	}
+	for _, o := range objs {
+		in := &awss3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: o.Key, VersionId: o.VersionId}
+		if _, err := awsC.DeleteObject(resetCtx, in); err != nil {
+			t.Fatalf("delete %s@%s: %v", aws.ToString(o.Key), aws.ToString(o.VersionId), err)
 		}
 	}
 }
