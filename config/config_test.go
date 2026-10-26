@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, body string) string {
@@ -183,5 +184,54 @@ s3:
 	if _, err := Load(write(t, head+"  cache_size: twelve\n")); err == nil ||
 		!strings.Contains(err.Error(), "s3.cache_size") {
 		t.Errorf("invalid cache_size accepted or misreported: %v", err)
+	}
+}
+
+func TestRetentionDurationForms(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want time.Duration
+	}{
+		{"", 7 * 24 * time.Hour}, // DefaultDeletedRetention
+		{"0", 0},                 // scrub purges immediately (e2e uses this)
+		{"36h", 36 * time.Hour},
+	} {
+		got, err := Config{DeletedRetention: tc.in}.RetentionDuration()
+		if err != nil {
+			t.Errorf("RetentionDuration(%q): %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("RetentionDuration(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+	for _, in := range []string{"7 days", "-1h", "seven"} {
+		if _, err := (Config{DeletedRetention: in}).RetentionDuration(); err == nil {
+			t.Errorf("RetentionDuration(%q) accepted, want error", in)
+		}
+	}
+}
+
+func TestLoadValidatesDeletedRetention(t *testing.T) {
+	t.Setenv("TEST_CLIENT_SECRET", "x")
+	const head = `
+oidc:
+  issuer: http://localhost:5556/dex
+  client_id: c
+  client_secret: TEST_CLIENT_SECRET
+s3:
+  bucket: b
+`
+	cfg, err := Load(write(t, head+"deleted_retention: 48h\n"))
+	if err != nil {
+		t.Fatalf("valid deleted_retention rejected: %v", err)
+	}
+	if got, err := cfg.RetentionDuration(); err != nil || got != 48*time.Hour {
+		t.Errorf("RetentionDuration = %v, %v, want 48h", got, err)
+	}
+
+	if _, err := Load(write(t, head+"deleted_retention: last-week\n")); err == nil ||
+		!strings.Contains(err.Error(), "deleted_retention") {
+		t.Errorf("invalid deleted_retention accepted or misreported: %v", err)
 	}
 }

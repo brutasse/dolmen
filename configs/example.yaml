@@ -35,3 +35,9 @@ s3:
   # Production example (path-style requests are always used):
   # bucket: my-gists
   # endpoint: https://sos-de-fra-1.exo.io
+
+# How long a deleted gist stays recoverable from the Deleted page. The
+# one-shot `dolmen ... scrub` command (run it daily, e.g. from cron) erases
+# gists past this age — every version — and sweeps orphan uploads of the
+# same age. Go duration syntax; default 168h.
+# deleted_retention: 168h

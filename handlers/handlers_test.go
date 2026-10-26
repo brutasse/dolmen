@@ -121,6 +121,53 @@ func TestRenderList(t *testing.T) {
 	}
 }
 
+func TestRenderTrash(t *testing.T) {
+	now := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	var buf bytes.Buffer
+	data := struct {
+		Rows          []deletedRow
+		UserID        string
+		Email         string
+		CSRF          string
+		RetentionDays int
+	}{
+		Rows: []deletedRow{{
+			Gist:      models.Gist{ID: "abc", Files: []models.File{{Name: "gone.md"}}},
+			DeletedAt: now,
+			ExpiresAt: now.AddDate(0, 0, 7),
+		}},
+		UserID:        "u",
+		Email:         "u@example.com",
+		CSRF:          "tok",
+		RetentionDays: 7,
+	}
+	if err := web.Render(&buf, "trash", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `action="/restore/abc"`) {
+		t.Error("restore form missing")
+	}
+	if !strings.Contains(out, `name="csrf_token" value="tok"`) {
+		t.Error("restore form is not CSRF-protected")
+	}
+	if !strings.Contains(out, "gone.md") {
+		t.Error("deleted gist name missing")
+	}
+	if !strings.Contains(out, "2026-02-08 12:00") {
+		t.Error("purge deadline missing from the title")
+	}
+
+	buf.Reset()
+	data.Rows = nil
+	if err := web.Render(&buf, "trash", data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Nothing to recover") {
+		t.Error("empty trash state missing")
+	}
+}
+
 func TestRenderViewVersionBanner(t *testing.T) {
 	versions := []models.Version{
 		{ID: "abc", VersionID: "v1", LastModified: time.Now()},

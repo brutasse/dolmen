@@ -543,10 +543,11 @@ func TestVersionContentNeedsNoValidation(t *testing.T) {
 	}
 }
 
-// TestListGistsCostsOneListWhenObjectsUnchanged is the widest fan-out in the
+// TestListGistsCostsTwoListsWhenObjectsUnchanged is the widest fan-out in the
 // app: the listing already carries every key's ETag, so a warm list page reads
-// nothing but the listing itself.
-func TestListGistsCostsOneListWhenObjectsUnchanged(t *testing.T) {
+// nothing but the listings themselves — one for the gists, one for the
+// tombstones that hide deleted ones from the list.
+func TestListGistsCostsTwoListsWhenObjectsUnchanged(t *testing.T) {
 	objects := map[string]string{
 		"index/one":           "u1",
 		"index/two":           "u1",
@@ -566,8 +567,8 @@ func TestListGistsCostsOneListWhenObjectsUnchanged(t *testing.T) {
 			t.Fatalf("ListGists %d returned %d gists, want 2", i, len(gists))
 		}
 	}
-	if store.count("list") != 2 {
-		t.Fatalf("list = %d, want 2", store.count("list"))
+	if store.count("list") != 4 {
+		t.Fatalf("list = %d, want 4 (two per ListGists: gists + tombstones)", store.count("list"))
 	}
 	if got := store.count("get-gist"); got != 2 {
 		t.Errorf("get-gist = %d, want 2: only the first ListGists may fetch objects", got)
@@ -639,9 +640,10 @@ func TestDeleteDropsCachedEntries(t *testing.T) {
 	if _, err := c.GetGist(ctx, "abc"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetGist after delete: err = %v, want ErrNotFound", err)
 	}
-	// Creating wrote both objects through, so the only index GET is the lookup
-	// after the delete: the cached entries did not survive it.
-	want := map[string]int{"put": 2, "delete": 2, "head-index": 2, "head-gist": 1, "get-index": 1}
+	// Create wrote two objects and the delete committed with a third (the
+	// tombstone); the gist object is untouched. So the index GET is the
+	// lookup after the delete and the cached index entry did not survive it.
+	want := map[string]int{"put": 3, "delete": 1, "head-index": 2, "head-gist": 1, "get-index": 1}
 	if got := store.snapshot(); !maps.Equal(got, want) {
 		t.Fatalf("counts = %v, want %v", got, want)
 	}

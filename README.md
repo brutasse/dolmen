@@ -88,6 +88,11 @@ CDN. `go build` is the whole build.
   requests for video seeking, so the app server forwards no file bytes.
 - **Sharing**: Every signed-in user can view any gist by URL. Only the owner
   can edit or delete one.
+- **Delete and recover**: Deleting hides a gist everywhere but the **Deleted**
+  page, where the owner can restore it — with its full version history — for
+  as long as it stays recoverable (7 days by default). A daily `dolmen scrub`
+  run erases what has aged out, permanently. No bucket lifecycle rules
+  involved.
 - **List page**: Each row shows the title, the description, and the
   modification time, newest first. Title search runs in the browser over the
   whole list, so typing sends no server request. Timestamps render relative
@@ -119,6 +124,7 @@ chain applies (environment variables, shared config file, instance profile).
 | `s3.bucket` | yes | Bucket that holds the gists; the app enables its versioning and CORS on boot |
 | `s3.endpoint` | no | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS |
 | `s3.cache_size` | no | Memory budget for the read cache, for example `128MB` or `512MiB`. A bare number is bytes. Defaults to `128MB`, and `0` turns caching off |
+| `deleted_retention` | no | How long a deleted gist stays recoverable, as a Go duration such as `168h`. The `scrub` job erases gists past this age and sweeps orphan uploads of the same age. Defaults to `168h` |
 | `listen` | no | Listen address. Defaults to `:8080` |
 | `base_url` | no | Externally reachable origin; builds the OAuth redirect URI. Defaults to `http://localhost<listen>` |
 
@@ -264,10 +270,61 @@ there.
 - `uploads/{user}/{uuid}` — dropped attachments, one object per file with the
   content type pinned by the server. A gist can reference an upload only
   under the saving user's own prefix, and only if the object exists. A
-  replaced attachment or a never-saved upload leaves an orphan object; the
-  app never garbage-collects orphans. Clean them with an `uploads/` lifecycle
-  rule. A rule shorter than the age of your oldest saved gist would delete
-  live data, so set its age with care.
+  replaced attachment or a never-saved upload leaves an orphan object. The
+  `scrub` job sweeps them: any upload older than `deleted_retention` that no
+  surviving gist references is erased, so no bucket lifecycle rule is needed.
+  The sweep reads every surviving gist first and stops if any gist is
+  unreadable, so a partial listing can never misjudge a live attachment as
+  orphaned.
+- `deleted/{user}/{gist-id}` — the tombstone of a deleted gist. Its presence
+  is the sole record that a gist is deleted (the gist and index objects stay
+  in place so recovery is possible); its content is the UTC deletion time. The
+  recoverability window and `scrub`'s purge both key off that timestamp. See
+  Delete and recover below.
+
+## Delete and recover
+
+Deleting a gist writes a `deleted/{user}/{id}` tombstone and then hides the
+owner index pointer, so the gist 404s on every route and drops off the list.
+The gist object itself is left untouched, which is what makes recovery
+possible: the owner restores it from the **Deleted** page (`/gists/deleted`)
+within the `deleted_retention` window, exactly as it was, history included.
+
+Restoration and erasure are driven by that tombstone, and every step is
+ordered and idempotent so a crash never leaves a dangling index or lost data
+that was still recoverable:
+
+- Restore rewrites the index pointer, then removes the tombstone. If it stops
+  in between, the gist stays hidden but the retry is identical — never a
+  half-restored state.
+- Erasure runs index → gist → tombstone. Removing the index first means an
+  index can never outlive its gist and dangle; removing the tombstone last
+  means an interrupted purge is still a visible, re-runnable deletion. The
+  worst an interrupted purge can leave is a gist that has already stopped
+  existing and so cannot be recovered — the accepted worst case.
+
+### Scrub
+
+`./dolmen -config /etc/dolmen/config.yaml scrub` is a one-shot command: it
+permanently erases gists whose tombstone is older than `deleted_retention`,
+including every stored version and the tombstone itself, then sweeps
+`uploads/` for orphans older than that window. It is idempotent, safe to run
+any time, and exits non-zero if any purge left work for the next run. Run it
+daily from cron or a systemd timer; it uses the same config and credentials
+as the server.
+
+```cron
+# nightly purge and orphan sweep
+17 3 * * * /usr/local/bin/dolmen -config /etc/dolmen/config.yaml scrub
+```
+
+For the container image, a Kubernetes CronJob (or equivalent) runs the same
+binary: set the container command to `["-config", "/config/dolmen.yaml",
+"scrub"]` and the schedule to once a day.
+
+Scrub needs `s3:ListBucketVersions` on the bucket in addition to the read and
+write permissions the server uses, since purging a deleted gist means listing
+and deleting its object versions.
 
 ## Assets and theming
 

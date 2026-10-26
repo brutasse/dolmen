@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +23,41 @@ type Config struct {
 	BaseURL string     `yaml:"base_url"`
 	OIDC    OIDCConfig `yaml:"oidc"`
 	S3      S3Config   `yaml:"s3"`
+	// DeletedRetention is how long a deleted gist stays recoverable; the
+	// scrub job purges it (and sweeps orphan uploads) past this age. A Go
+	// duration string ("168h"); empty means DefaultDeletedRetention.
+	DeletedRetention string `yaml:"deleted_retention"`
+}
+
+// DefaultDeletedRetention is the recoverability window when DeletedRetention
+// is unset: 7 days.
+const DefaultDeletedRetention = "168h"
+
+// DefaultRetention is DefaultDeletedRetention as a duration.
+func DefaultRetention() time.Duration {
+	d, err := time.ParseDuration(DefaultDeletedRetention)
+	if err != nil {
+		panic("config: bad DefaultDeletedRetention: " + err.Error()) // constant
+	}
+	return d
+}
+
+// RetentionDuration resolves DeletedRetention. An empty DeletedRetention is
+// DefaultDeletedRetention. Load validates the string, but this stays
+// available for a Config assembled in code, as the e2e suite builds one.
+func (c Config) RetentionDuration() (time.Duration, error) {
+	s := strings.TrimSpace(c.DeletedRetention)
+	if s == "" {
+		s = DefaultDeletedRetention
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("deleted_retention %q is not a duration (e.g. \"168h\")", c.DeletedRetention)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("deleted_retention %q is negative", c.DeletedRetention)
+	}
+	return d, nil
 }
 
 // OIDCConfig configures the authorization-code + PKCE login flow. The flow
@@ -155,6 +191,9 @@ func (c *Config) validate() error {
 		add("s3.bucket is required")
 	}
 	if _, err := c.S3.CacheMaxBytes(); err != nil {
+		add("%v", err)
+	}
+	if _, err := c.RetentionDuration(); err != nil {
 		add("%v", err)
 	}
 

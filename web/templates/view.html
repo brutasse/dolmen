@@ -15,7 +15,7 @@
         {{end}}
         {{if eq .Gist.UserID .UserID}}
         <a class="btn btn-secondary btn-sm" href="/edit/{{.Gist.ID}}"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg>Edit</a>
-        <form method="post" action="/delete/{{.Gist.ID}}" class="inline" onsubmit="return confirm('Delete this gist? This cannot be undone.')">
+        <form method="post" action="/delete/{{.Gist.ID}}" class="inline" onsubmit="return confirm('Delete this gist? It stays recoverable from Deleted gists for {{.RetainDays}} days.')">
             <input type="hidden" name="csrf_token" value="{{.CSRF}}">
             <button type="submit" class="btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Delete</button>
         </form>

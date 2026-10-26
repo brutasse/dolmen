@@ -31,6 +31,15 @@ func main() {
 		return
 	}
 
+	// Subcommands run one job and exit, no server.
+	mode := "serve"
+	if flag.NArg() > 0 {
+		mode = flag.Arg(0)
+		if mode != "scrub" {
+			log.Fatalf("unknown command %q (want \"scrub\" or no command to serve)", mode)
+		}
+	}
+
 	// SIGINT/SIGTERM trigger the graceful shutdown below.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -43,6 +52,11 @@ func main() {
 	s3Client, err := s3.NewClient(ctx, cfg.S3)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if mode == "scrub" {
+		runScrub(ctx, s3Client, cfg)
+		return
 	}
 
 	provider, verifier, err := middleware.NewOIDCProviderAndVerifier(ctx, cfg.OIDC)
@@ -90,5 +104,23 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// runScrub purges expired deleted gists and orphan uploads once, then exits
+// non-zero if anything still needs doing (a re-run finishes it). Meant to be
+// run daily by cron; it does not start the server.
+func runScrub(ctx context.Context, s3Client *s3.Client, cfg *config.Config) {
+	retention, err := cfg.RetentionDuration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stats, err := s3Client.Scrub(ctx, time.Now().UTC(), retention)
+	if err != nil {
+		log.Printf("scrub: %v", err)
+	}
+	log.Printf("scrub: purged %d gists, %d orphan uploads", stats.GistsPurged, stats.UploadsPurged)
+	if err != nil {
+		os.Exit(1)
 	}
 }

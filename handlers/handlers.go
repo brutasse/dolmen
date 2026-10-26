@@ -33,17 +33,27 @@ type Handler struct {
 	provider *oidc.Provider
 	baseURL  string
 	oidcCfg  config.OIDCConfig
+	// retention is the deleted-gist recoverability window, for the trash's
+	// expiry display and the view page's delete confirm.
+	retention time.Duration
 }
 
 // NewHandler creates a new handler. cfg.OIDC must carry the resolved
 // client secret, not an env var name.
 func NewHandler(s3Client *s3.Client, provider *oidc.Provider, cfg *config.Config) *Handler {
+	// Load validates the string; a hand-assembled Config (tests) falls back
+	// to the default.
+	retention, err := cfg.RetentionDuration()
+	if err != nil {
+		retention = config.DefaultRetention()
+	}
 	return &Handler{
-		s3Client: s3Client,
-		files:    newFileRenderer(),
-		provider: provider,
-		baseURL:  cfg.BaseURL,
-		oidcCfg:  cfg.OIDC,
+		s3Client:  s3Client,
+		files:     newFileRenderer(),
+		provider:  provider,
+		baseURL:   cfg.BaseURL,
+		oidcCfg:   cfg.OIDC,
+		retention: retention,
 	}
 }
 
@@ -87,6 +97,7 @@ type viewData struct {
 	Email         string
 	CSRF          string
 	CurrentVid    string // version ID being displayed; empty for the current version
+	RetainDays    int    // deleted gists stay recoverable this long; delete confirm copy
 	NeedsMath     bool
 	NeedsMermaid  bool
 }
@@ -98,7 +109,7 @@ func (h *Handler) renderView(w http.ResponseWriter, gist *models.Gist, versions 
 	if len(versions) > 0 {
 		versions = versions[1:]
 	}
-	data := viewData{Gist: gist, Versions: versions, UserID: userID, Email: email, CurrentVid: currentVid, CSRF: csrf}
+	data := viewData{Gist: gist, Versions: versions, UserID: userID, Email: email, CurrentVid: currentVid, CSRF: csrf, RetainDays: int(h.retention.Hours() / 24)}
 	rawSuffix := ""
 	if currentVid != "" {
 		rawSuffix = "?vid=" + url.QueryEscape(currentVid)
@@ -255,6 +266,58 @@ func (h *Handler) DeleteGist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/gists", http.StatusFound)
+}
+
+// ListDeleted shows the user's deleted gists with their recovery deadline.
+func (h *Handler) ListDeleted(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	entries, err := h.s3Client.ListDeleted(r.Context(), userID)
+	if err != nil {
+		respondStorage(w, r, err)
+		return
+	}
+	rows := make([]deletedRow, len(entries))
+	for i, e := range entries {
+		rows[i] = deletedRow{Gist: e.Gist, DeletedAt: e.DeletedAt, ExpiresAt: e.DeletedAt.Add(h.retention)}
+	}
+	web.RenderHTTP(w, "trash", struct {
+		Rows          []deletedRow
+		UserID        string
+		Email         string
+		CSRF          string
+		RetentionDays int
+	}{Rows: rows, UserID: userID, Email: middleware.GetUserEmail(r.Context()), CSRF: middleware.CSRFToken(r.Context()), RetentionDays: int(h.retention.Hours() / 24)})
+}
+
+// deletedRow is one trash entry for the template.
+type deletedRow struct {
+	Gist      models.Gist
+	DeletedAt time.Time
+	ExpiresAt time.Time
+}
+
+// RestoreGist undoes a delete from the trash page.
+func (h *Handler) RestoreGist(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !validGistID(id) {
+		http.Error(w, "Gist not found", http.StatusNotFound)
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	form, err := readForm(r)
+	if err != nil {
+		http.Error(w, err.Error(), formErrorStatus(err))
+		return
+	}
+	if !middleware.CheckCSRF(r, form.Get("csrf_token")) {
+		http.Error(w, "CSRF token mismatch", http.StatusForbidden)
+		return
+	}
+	if err := h.s3Client.RestoreGist(r.Context(), userID, id); err != nil {
+		respondStorage(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/gist/"+id, http.StatusFound)
 }
 
 // ListVersions lists versions

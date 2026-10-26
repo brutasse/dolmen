@@ -1,0 +1,22 @@
+{{define "title"}}Deleted gists{{end}}
+
+{{define "content"}}
+<h1 class="page-title">Deleted gists</h1>
+<p class="notice">Deleted gists stay here for {{.RetentionDays}} days, then are gone for good.</p>
+
+<div class="gist-list">
+    {{if not .Rows}}
+    <p class="empty">Nothing to recover.</p>
+    {{end}}
+    {{range .Rows}}
+    <div class="gist-row">
+        <span class="gist-title">{{.Gist.DisplayName}}{{if .Gist.Description}}<span class="gist-desc">{{.Gist.Description}}</span>{{end}}</span>
+        <time class="gist-date" datetime="{{.DeletedAt.Format "2006-01-02T15:04:05Z07:00"}}" title="deleted {{.DeletedAt.Format "2006-01-02 15:04"}}, purged after {{.ExpiresAt.Format "2006-01-02 15:04"}}">{{.DeletedAt.Format "2006-01-02 15:04"}}</time>
+        <form method="post" action="/restore/{{.Gist.ID}}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+            <button type="submit" class="btn btn-sm btn-secondary"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Restore</button>
+        </form>
+    </div>
+    {{end}}
+</div>
+{{end}}

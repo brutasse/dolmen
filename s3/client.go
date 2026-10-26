@@ -272,6 +272,16 @@ func (c *Client) HeadObject(ctx context.Context, key string) (int64, string, err
 // so any authenticated user can resolve id -> owner in one read.
 func indexKey(id string) string { return "index/" + id }
 
+// deletedPrefix scopes the tombstone objects recording deletions; scrub
+// sweeps it bucket-wide.
+const deletedPrefix = "deleted/"
+
+// deletedKey is the tombstone of a deleted gist: its presence is the sole
+// truth of "deleted", its content the RFC3339 deletion time. The gist and
+// index objects are deliberately left in place by DeleteGist so a tombstone
+// that exists can always be undone.
+func deletedKey(user, id string) string { return deletedPrefix + user + "/" + id }
+
 func isNotFound(err error) bool {
 	var nsk *s3types.NoSuchKey
 	if errors.As(err, &nsk) {
@@ -441,7 +451,7 @@ func (c *Client) listKeys(ctx context.Context, prefix string) ([]objectInfo, err
 		}
 		for _, obj := range resp.Contents {
 			if obj.Key != nil {
-				objs = append(objs, objectInfo{key: *obj.Key, etag: unquoteETag(aws.ToString(obj.ETag))})
+				objs = append(objs, objectInfo{key: *obj.Key, etag: unquoteETag(aws.ToString(obj.ETag)), mod: aws.ToTime(obj.LastModified)})
 			}
 		}
 		if resp.IsTruncated == nil || !*resp.IsTruncated {
@@ -455,10 +465,12 @@ func (c *Client) listKeys(ctx context.Context, prefix string) ([]objectInfo, err
 }
 
 // objectInfo is one key from a listing plus the ETag that says whether a
-// cached body still describes that key.
+// cached body still describes that key, and the listing's last-modified time
+// (scrub ages orphans on it).
 type objectInfo struct {
 	key  string
 	etag string
+	mod  time.Time
 }
 
 // listObjects is listKeys behind the coalescing group, so parallel requests
@@ -475,8 +487,28 @@ func (c *Client) listObjects(ctx context.Context, prefix string) ([]objectInfo, 
 	return v.([]objectInfo), nil
 }
 
+// deletedIDs returns the ids of userID's tombstones. One extra coalesced
+// listing next to ListGists' gist listing; the tombstone is what hides a
+// deleted gist from the list while its object stays intact for recovery.
+func (c *Client) deletedIDs(ctx context.Context, userID string) (map[string]bool, error) {
+	prefix := deletedPrefix + userID + "/"
+	objs, err := c.listObjects(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool, len(objs))
+	for _, obj := range objs {
+		ids[strings.TrimPrefix(obj.key, prefix)] = true
+	}
+	return ids, nil
+}
+
 func (c *Client) ListGists(ctx context.Context, userID string) ([]models.Gist, error) {
 	prefix := fmt.Sprintf("gists/%s/", userID)
+	deleted, err := c.deletedIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	objs, err := c.listObjects(ctx, prefix)
 	if err != nil {
 		return nil, err
@@ -489,6 +521,9 @@ func (c *Client) ListGists(ctx context.Context, userID string) ([]models.Gist, e
 	// costs one request in total.
 	var gists []models.Gist
 	for _, obj := range objs {
+		if deleted[strings.TrimSuffix(strings.TrimPrefix(obj.key, prefix), ".json")] {
+			continue // deleted, still recoverable
+		}
 		gist, err := c.getGistByKey(ctx, obj.key, obj.etag)
 		if err != nil {
 			continue // skip unreadable objects
@@ -571,8 +606,14 @@ func (c *Client) UpdateGist(ctx context.Context, userID string, gist *models.Gis
 	return c.putGist(ctx, owner, gist)
 }
 
-// DeleteGist tombstones the owner pointer first (so views 404 immediately,
-// versions hidden) then the gist object; only the owner may delete.
+// DeleteGist tombstones the deletion first, then tombstones the owner
+// pointer (so views 404 immediately, versions hidden); only the owner may
+// delete. The tombstone write is the commit point: once it exists the gist is
+// recoverable and scrub-eligible whatever happens next, and if it fails
+// nothing happened at all. The gist object is deliberately left untouched —
+// RestoreGist only has to undo the two tombstones. If the process dies
+// between the tombstone write and the index delete, the next delete retry or
+// (after the retention period) the scrub finishes the job.
 func (c *Client) DeleteGist(ctx context.Context, userID, id string) error {
 	owner, err := c.resolveOwner(ctx, id)
 	if err != nil {
@@ -581,18 +622,75 @@ func (c *Client) DeleteGist(ctx context.Context, userID, id string) error {
 	if owner != userID {
 		return ErrForbidden
 	}
-	_, _ = c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+	if err := c.putRaw(ctx, deletedKey(owner, id), time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	if _, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: &c.bucket,
 		Key:    aws.String(indexKey(id)),
-	})
-	_, err = c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &c.bucket,
-		Key:    aws.String(gistKey(owner, id)),
-	})
-	// Dropped whether the deletes succeeded: an entry for an object this
-	// process tried to remove must not answer a later read from cache.
+	}); err != nil {
+		return err
+	}
 	c.cache.invalidate(objectCacheKey(indexKey(id)))
-	c.cache.invalidate(objectCacheKey(gistKey(owner, id)))
+	return nil
+}
+
+// DeletedGist is one trash entry: the gist and the moment it was deleted.
+type DeletedGist struct {
+	Gist      models.Gist
+	DeletedAt time.Time
+}
+
+// ListDeleted lists the user's deleted-but-not-yet-purged gists. Entries the
+// tombstone or gist object cannot be read for (a gist a crashed scrub was
+// halfway through purging) are skipped, like ListGists skips unreadable
+// objects; the next scrub run finishes removing them either way.
+func (c *Client) ListDeleted(ctx context.Context, userID string) ([]DeletedGist, error) {
+	prefix := deletedPrefix + userID + "/"
+	objs, err := c.listObjects(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var out []DeletedGist
+	for _, obj := range objs {
+		stamp, err := c.loadObject(ctx, obj.key, obj.etag)
+		if err != nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(stamp)))
+		if err != nil {
+			continue
+		}
+		gist, err := c.getGistByKey(ctx, gistKey(userID, strings.TrimPrefix(obj.key, prefix)), "")
+		if err != nil {
+			continue
+		}
+		gist.UserID = userID
+		out = append(out, DeletedGist{Gist: *gist, DeletedAt: at})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DeletedAt.After(out[j].DeletedAt) })
+	return out, nil
+}
+
+// RestoreGist undoes a DeleteGist: it rewrites the owner pointer, then lifts
+// the tombstone. The tombstone must exist under the caller's own prefix,
+// which is both the ownership check and the "was deleted" check: an id nobody
+// deleted, or someone else deleted, is ErrNotFound. A fresh index write makes
+// the gist current again (a crash before the tombstone lift leaves the gist
+// hidden but this call exactly retryable, never half-restored), and the
+// tombstone lift is what flips the trash back to the list.
+func (c *Client) RestoreGist(ctx context.Context, userID, id string) error {
+	if _, err := c.loadObject(ctx, deletedKey(userID, id), ""); err != nil {
+		return err
+	}
+	if err := c.putRaw(ctx, indexKey(id), userID); err != nil {
+		return err
+	}
+	_, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &c.bucket,
+		Key:    aws.String(deletedKey(userID, id)),
+	})
+	c.cache.invalidate(objectCacheKey(deletedKey(userID, id)))
 	return err
 }
 
@@ -657,4 +755,210 @@ func (c *Client) GetVersion(ctx context.Context, id, versionID string) (*models.
 	}
 	gist.UserID = owner
 	return &gist, nil
+}
+
+// UploadKeyPrefix scopes browser-uploaded blob objects (see
+// handlers.validUploadKey for the key shape). The scrub sweeps it.
+const UploadKeyPrefix = "uploads/"
+
+// ScrubStats reports what one scrub run did.
+type ScrubStats struct {
+	GistsPurged   int
+	UploadsPurged int
+}
+
+// listKeyVersions returns every version and delete-marker id stored for key.
+func (c *Client) listKeyVersions(ctx context.Context, key string) ([]string, error) {
+	var ids []string
+	var keyMarker, vidMarker *string
+	for {
+		out, err := c.s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:          &c.bucket,
+			Prefix:          &key,
+			KeyMarker:       keyMarker,
+			VersionIdMarker: vidMarker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list versions of %s: %w", key, err)
+		}
+		for _, v := range out.Versions {
+			if v.Key != nil && *v.Key == key && v.VersionId != nil {
+				ids = append(ids, *v.VersionId)
+			}
+		}
+		for _, m := range out.DeleteMarkers {
+			if m.Key != nil && *m.Key == key && m.VersionId != nil {
+				ids = append(ids, *m.VersionId)
+			}
+		}
+		if out.IsTruncated == nil || !*out.IsTruncated {
+			return ids, nil
+		}
+		keyMarker, vidMarker = out.NextKeyMarker, out.NextVersionIdMarker
+		if keyMarker == nil {
+			return ids, nil // defensive: truncated without a marker
+		}
+	}
+}
+
+// purgeKey deletes every stored version of key. A key that is already gone
+// purges successfully: purge is a re-runnable step, not a check.
+func (c *Client) purgeKey(ctx context.Context, key string) error {
+	ids, err := c.listKeyVersions(ctx, key)
+	if err != nil {
+		return err
+	}
+	for _, vid := range ids {
+		if _, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &c.bucket,
+			Key:       &key,
+			VersionId: &vid,
+		}); err != nil {
+			return fmt.Errorf("purge %s@%s: %w", key, vid, err)
+		}
+	}
+	return nil
+}
+
+// expiredTombstones lists deleted/ keys whose recorded deletion time is older
+// than retention. Tombstones that cannot be read cost the run an error (the
+// run still does everything else); tombstones with unreadable content are
+// skipped and logged: nothing is ever purged on a guess about its age.
+func (c *Client) expiredTombstones(ctx context.Context, now time.Time, retention time.Duration) ([]string, error) {
+	objs, err := c.listKeys(ctx, deletedPrefix)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	var errs []error
+	for _, obj := range objs {
+		data, _, err := c.getObject(ctx, obj.key, "")
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read tombstone %s: %w", obj.key, err))
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+		if err != nil {
+			log.Printf("scrub: tombstone %s has unreadable deletion time %q; leaving it (and its gist) alone", obj.key, strings.TrimSpace(string(data)))
+			continue
+		}
+		if now.Sub(at) < retention {
+			continue
+		}
+		out = append(out, obj.key)
+	}
+	return out, errors.Join(errs...)
+}
+
+// Scrub permanently erases gists deleted more than retention ago and sweeps
+// uploads older than retention that no surviving gist references. Run it
+// daily (dolmen scrub). It never relies on bucket lifecycle. now is the
+// reference time for age checks, injected so tests are deterministic.
+//
+// Every step is idempotent and ordered so a crash never strands state and
+// never leaves an index pointing at a purged gist:
+//
+//   - A gist purge goes index, gist object, tombstone. The tombstone that
+//     marks the gist deleted is removed last, so an interrupted purge is
+//     still a visible, re-runnable deletion; the worst it can leave is a
+//     gist that no longer fully exists and so cannot be recovered — the
+//     user's accepted worst case. A re-run finds the index or gist already
+//     gone and completes the rest.
+//   - The upload sweep runs after the gists are purged, and an upload is
+//     erased only when the full list of surviving gists was readable (a
+//     corrupt or unreachable gist aborts the sweep rather than risking
+//     blobs a surviving gist still references) and only when it is older
+//     than retention, which covers the gap between an upload landing and
+//     the save that references it.
+//
+// Individual gist purges never abort the run; the aggregated errors say what
+// a re-run still has to do.
+func (c *Client) Scrub(ctx context.Context, now time.Time, retention time.Duration) (ScrubStats, error) {
+	var stats ScrubStats
+
+	expired, err := c.expiredTombstones(ctx, now, retention)
+	var errs []error
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	// Purge each expired gist: index first so an index can never outlive its
+	// gist, tombstone last so the deletion stays re-runnable until it is done.
+	for _, tKey := range expired {
+		rest := strings.TrimPrefix(tKey, deletedPrefix)
+		sep := strings.LastIndex(rest, "/")
+		if sep <= 0 {
+			log.Printf("scrub: tombstone key %q is malformed; leaving it alone", tKey)
+			continue
+		}
+		user, id := rest[:sep], rest[sep+1:]
+		// Blobs are swept below, not here: the reference set must exclude
+		// this gist (it is being purged) while including every survivor, and
+		// that set can only be computed from a complete gist listing.
+		steps := []string{indexKey(id), gistKey(user, id), tKey}
+		done := true
+		for _, key := range steps {
+			if err := c.purgeKey(ctx, key); err != nil {
+				errs = append(errs, err)
+				done = false
+				break // this gist is not fully purged; leave its tombstone for the re-run
+			}
+		}
+		if done {
+			stats.GistsPurged++
+		}
+	}
+
+	// Sweep orphan uploads against the surviving gists' reference set. A
+	// partial picture aborts the sweep rather than risk a live gist's blobs.
+	referenced, err := c.referencedUploads(ctx)
+	if err != nil {
+		log.Printf("scrub: upload sweep skipped: %v", err)
+		return stats, errors.Join(append(errs, err)...)
+	}
+	objs, err := c.listKeys(ctx, UploadKeyPrefix)
+	if err != nil {
+		return stats, errors.Join(append(errs, err)...)
+	}
+	for _, obj := range objs {
+		if referenced[obj.key] {
+			continue
+		}
+		if obj.mod.IsZero() || now.Sub(obj.mod) < retention {
+			continue // no listing date, or too young: never purge on a guess
+		}
+		if err := c.purgeKey(ctx, obj.key); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		stats.UploadsPurged++
+	}
+	return stats, errors.Join(errs...)
+}
+
+// referencedUploads reads every surviving gist's JSON for the upload keys it
+// points at. Any failure is returned: the caller must not sweep uploads
+// against a partial picture.
+func (c *Client) referencedUploads(ctx context.Context) (map[string]bool, error) {
+	objs, err := c.listKeys(ctx, "gists/")
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]bool{}
+	for _, obj := range objs {
+		data, _, err := c.getObject(ctx, obj.key, "")
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", obj.key, err)
+		}
+		var gist models.Gist
+		if err := gist.FromJSON(data); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", obj.key, err)
+		}
+		for _, f := range gist.Files {
+			if f.IsBlob() {
+				refs[f.Key] = true
+			}
+		}
+	}
+	return refs, nil
 }

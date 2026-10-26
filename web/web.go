@@ -152,7 +152,7 @@ func parsePages() map[string]*template.Template {
 	}
 	shared := []string{"templates/layout.html", "templates/partials.html"}
 	out := map[string]*template.Template{}
-	for _, page := range []string{"list", "view", "edit"} {
+	for _, page := range []string{"list", "view", "edit", "trash"} {
 		files := append(append([]string{}, shared...), "templates/"+page+".html")
 		out[page] = template.Must(template.New(page).Funcs(funcs).ParseFS(templateFS, files...))
 	}

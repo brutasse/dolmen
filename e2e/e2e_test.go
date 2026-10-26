@@ -66,6 +66,7 @@ var (
 	appCfg      config.Config
 	setupErr    error
 	awsC        *awss3.Client
+	appS3       *dolmens3.Client // the app's own storage client: e2e calls Scrub on it
 	containers  []tc.Container
 	netw        *tc.DockerNetwork
 	tmpDir      string
@@ -273,6 +274,7 @@ staticPasswords:
 	if err != nil {
 		return fmt.Errorf("app s3 client: %w", err)
 	}
+	appS3 = s3Client
 	provider, verifier, err := middleware.NewOIDCProviderAndVerifier(ctx, appCfg.OIDC)
 	if err != nil {
 		return fmt.Errorf("oidc: %w", err)
@@ -743,6 +745,106 @@ func TestDelete(t *testing.T) {
 	}
 	if code, _ := b.get("/gist/" + id); code != http.StatusNotFound {
 		t.Errorf("deleted gist view: expected 404, got %d", code)
+	}
+}
+
+func TestRecoverAndScrub(t *testing.T) {
+	requireStack(t)
+	resetStore(t)
+	b := loginAs(t, alice)
+	id := createGist(t, b, "Recoverable", [][2]string{{"a.md", "comeback"}})
+	ctx := context.Background()
+
+	del := func() {
+		resp := b.raw("POST", "/delete/"+id, strings.NewReader(url.Values{"csrf_token": {b.csrfToken(t)}}.Encode()))
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusFound {
+			t.Fatalf("delete: expected 302, got %d", resp.StatusCode)
+		}
+	}
+	del()
+
+	// Hidden everywhere but the trash.
+	_, body := b.get("/gists")
+	if strings.Contains(body, "Recoverable") {
+		t.Error("deleted gist still listed")
+	}
+	if code, _ := b.get("/gist/" + id); code != http.StatusNotFound {
+		t.Fatalf("deleted gist view: got %d, want 404", code)
+	}
+	code, body := b.get("/gists/deleted")
+	if code != 200 || !strings.Contains(body, "Recoverable") || !strings.Contains(body, `action="/restore/`+id+`"`) {
+		t.Fatalf("trash page (%d) missing the deleted gist or its restore form", code)
+	}
+
+	// Restore is a POST form: CSRF-gated like delete.
+	resp := b.raw("POST", "/restore/"+id, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("restore without csrf token: got %d, want 403", resp.StatusCode)
+	}
+
+	// Another user neither sees it in their trash nor can restore it.
+	bb := loginAs(t, bob)
+	if _, body := bb.get("/gists/deleted"); strings.Contains(body, "Recoverable") {
+		t.Error("bob's trash shows alice's deleted gist")
+	}
+	resp = bb.raw("POST", "/restore/"+id, strings.NewReader(url.Values{"csrf_token": {bb.csrfToken(t)}}.Encode()))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("cross-user restore: got %d, want 404", resp.StatusCode)
+	}
+
+	// Scrub inside the retention window purges nothing.
+	if stats, err := appS3.Scrub(ctx, time.Now().UTC(), 7*24*time.Hour); err != nil || stats.GistsPurged != 0 {
+		t.Fatalf("scrub within window: stats=%+v err=%v, want nothing purged", stats, err)
+	}
+	if code, body := b.get("/gists/deleted"); code != 200 || !strings.Contains(body, "Recoverable") {
+		t.Fatal("in-window scrub removed the trash entry")
+	}
+
+	// Restore brings it fully back.
+	resp = b.raw("POST", "/restore/"+id, strings.NewReader(url.Values{"csrf_token": {b.csrfToken(t)}}.Encode()))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("restore: got %d, want 302", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/gist/"+id {
+		t.Errorf("restore redirect = %q, want /gist/%s", loc, id)
+	}
+	if code, body := b.get("/gist/" + id); code != 200 || !strings.Contains(body, "comeback") {
+		t.Fatalf("restored gist view: %d, missing content", code)
+	}
+	_, body = b.get("/gists")
+	if !strings.Contains(body, "Recoverable") {
+		t.Error("restored gist missing from list")
+	}
+
+	// Delete again; the past-window scrub erases it and every stored version.
+	del()
+	if stats, err := appS3.Scrub(ctx, time.Now().UTC(), 0); err != nil || stats.GistsPurged != 1 {
+		t.Fatalf("scrub past window: stats=%+v err=%v, want 1 gist purged", stats, err)
+	}
+	vers, err := awsC.ListObjectVersions(ctx, &awss3.ListObjectVersionsInput{Bucket: aws.String(bucketName)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vers.Versions {
+		if strings.Contains(aws.ToString(v.Key), id) {
+			t.Errorf("purge left a version: %s@%s", aws.ToString(v.Key), aws.ToString(v.VersionId))
+		}
+	}
+	for _, m := range vers.DeleteMarkers {
+		if strings.Contains(aws.ToString(m.Key), id) {
+			t.Errorf("purge left a delete marker: %s@%s", aws.ToString(m.Key), aws.ToString(m.VersionId))
+		}
+	}
+	if _, body := b.get("/gists/deleted"); strings.Contains(body, "Recoverable") {
+		t.Error("purged gist still shown in trash")
+	}
+	// The re-run is a clean no-op: idempotence in the only place it matters.
+	if stats, err := appS3.Scrub(ctx, time.Now().UTC(), 0); err != nil || stats.GistsPurged != 0 {
+		t.Fatalf("scrub re-run: stats=%+v err=%v, want a no-op", stats, err)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"dolmen/middleware"
 	"dolmen/models"
+	"dolmen/s3"
 	"github.com/google/uuid"
 )
 
@@ -49,8 +50,9 @@ func blobContentType(name string) string {
 }
 
 // uploadKeyPrefix scopes all browser-uploaded blobs; they are only ever
-// referenced by gist JSON after a HEAD check at save time.
-const uploadKeyPrefix = "uploads/"
+// referenced by gist JSON after a HEAD check at save time. The scrub's orphan
+// sweep keys off the same prefix (s3.UploadKeyPrefix).
+const uploadKeyPrefix = s3.UploadKeyPrefix
 
 // validUploadKey reports whether key is an upload issued for this user:
 // uploads/{user}/{uuid}. Nothing else may ever be referenced by a gist.
