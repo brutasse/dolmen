@@ -1,12 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "description": "Updates are raised 7 days after release; security fixes and digest/pin updates bypass the cooldown.",
+  "description": "Updates are raised 7 days after release; security fixes bypass the cooldown.",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
       "description": "7-day supply-chain cooldown: renovate/stability-days holds the branch back until the release is old enough.",
-      "matchUpdateTypes": ["major", "minor", "patch"],
+      "matchUpdateTypes": ["major", "minor", "patch", "digest", "pinDigest"],
       "minimumReleaseAge": "7 days",
       "internalChecksFilter": "strict"
     },
@@ -20,6 +21,13 @@
       "description": "Land low-risk bumps once CI is green.",
       "matchUpdateTypes": ["patch", "digest", "pin", "pinDigest"],
       "automerge": true
+    },
+    {
+      "description": "Distroless digests need a human: GCR exposes no release timestamps, so the cooldown can't be enforced.",
+      "matchFileNames": ["Dockerfile"],
+      "matchPackageNames": ["gcr.io/distroless/static-debian12"],
+      "matchUpdateTypes": ["digest", "pinDigest"],
+      "automerge": false
     }
   ]
 }
