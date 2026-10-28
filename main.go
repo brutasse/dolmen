@@ -71,8 +71,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if cfg.OIDC.ClientSecret == "" {
-		log.Printf("oidc.client_secret unset: built-in login flow disabled, /login and /callback answer 503, unauthenticated requests 401")
+	if !cfg.OIDC.LoginEnabled() {
+		log.Printf("built-in OIDC login disabled: /login and /callback answer 503, unauthenticated requests 401")
 	}
 
 	if err := s3Client.EnsureConfigured(ctx, cfg.BaseURL); err != nil {

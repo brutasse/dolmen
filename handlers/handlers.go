@@ -354,10 +354,24 @@ func (h *Handler) ViewVersion(w http.ResponseWriter, r *http.Request) {
 	h.renderView(w, gist, versions, userID, middleware.GetUserEmail(r.Context()), vid, middleware.CSRFToken(r.Context()))
 }
 
+func (h *Handler) oauthConfig() *oauth2.Config {
+	endpoint := h.provider.Endpoint()
+	if h.oidcCfg.PublicClient {
+		endpoint.AuthStyle = oauth2.AuthStyleInParams
+	}
+	return &oauth2.Config{
+		ClientID:     h.oidcCfg.ClientID,
+		ClientSecret: h.oidcCfg.ClientSecret,
+		Endpoint:     endpoint,
+		Scopes:       []string{"openid", "email"},
+		RedirectURL:  h.baseURL + "/callback",
+	}
+}
+
 // Login redirects to OIDC auth
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	if h.oidcCfg.ClientSecret == "" {
-		http.Error(w, "The built-in login flow is disabled (no oidc.client_secret)", http.StatusServiceUnavailable)
+	if !h.oidcCfg.LoginEnabled() {
+		http.Error(w, "The built-in login flow is disabled", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -368,14 +382,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	codeVerifier := oauth2.GenerateVerifier()
-
-	oauth2Config := &oauth2.Config{
-		ClientID:     h.oidcCfg.ClientID,
-		ClientSecret: h.oidcCfg.ClientSecret,
-		Endpoint:     h.provider.Endpoint(),
-		Scopes:       []string{"openid", "email"},
-		RedirectURL:  h.baseURL + "/callback",
-	}
+	oauth2Config := h.oauthConfig()
 
 	// The flow cookies must survive the cross-site top-level redirect back
 	// from the IdP, so they need SameSite=None — which browsers only accept
@@ -395,8 +402,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Callback handles OIDC callback
 func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
-	if h.oidcCfg.ClientSecret == "" {
-		http.Error(w, "The built-in login flow is disabled (no oidc.client_secret)", http.StatusServiceUnavailable)
+	if !h.oidcCfg.LoginEnabled() {
+		http.Error(w, "The built-in login flow is disabled", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -428,14 +435,7 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauth2Config := &oauth2.Config{
-		ClientID:     h.oidcCfg.ClientID,
-		ClientSecret: h.oidcCfg.ClientSecret,
-		Endpoint:     h.provider.Endpoint(),
-		Scopes:       []string{"openid", "email"},
-		RedirectURL:  h.baseURL + "/callback",
-	}
-
+	oauth2Config := h.oauthConfig()
 	token, err := oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(cookieVerifier.Value))
 	if err != nil {
 		log.Printf("Token exchange failed: %v", err)

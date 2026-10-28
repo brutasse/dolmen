@@ -50,8 +50,9 @@ import (
 const (
 	bucketName = "e2e-gists"
 
-	clientID     = "gist-client"
-	clientSecret = "testsecret"
+	clientID       = "gist-client"
+	clientSecret   = "testsecret"
+	publicClientID = "gist-public-client"
 
 	alice = "alice@example.com"
 	bob   = "bob@example.com"
@@ -62,16 +63,17 @@ const (
 )
 
 var (
-	appURL      string
-	appCfg      config.Config
-	setupErr    error
-	awsC        *awss3.Client
-	appS3       *dolmens3.Client // the app's own storage client: e2e calls Scrub on it
-	containers  []tc.Container
-	netw        *tc.DockerNetwork
-	tmpDir      string
-	dexImage    string
-	s3mockImage string
+	appURL       string
+	publicAppURL string
+	appCfg       config.Config
+	setupErr     error
+	awsC         *awss3.Client
+	appS3        *dolmens3.Client // the app's own storage client: e2e calls Scrub on it
+	containers   []tc.Container
+	netw         *tc.DockerNetwork
+	tmpDir       string
+	dexImage     string
+	s3mockImage  string
 )
 
 type composeSpec struct {
@@ -199,6 +201,10 @@ func startStack(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	publicAppPort, publicAppLn, err := reservePort()
+	if err != nil {
+		return err
+	}
 	dexPort, dexLn, err := reservePort()
 	if err != nil {
 		return err
@@ -227,6 +233,11 @@ staticClients:
     secret: %s
     redirectURIs:
       - http://127.0.0.1:%d/callback
+  - id: %s
+    name: Gist Public E2E
+    public: true
+    redirectURIs:
+      - http://127.0.0.1:%d/callback
 enablePasswordDB: true
 staticPasswords:
   - email: %s
@@ -237,7 +248,7 @@ staticPasswords:
     hash: "%s"
     username: bob
     userID: e2e-bob
-`, dexPort, clientID, clientSecret, appPort, alice, aliceHash, bob, bobHash)
+`, dexPort, clientID, clientSecret, appPort, publicClientID, publicAppPort, alice, aliceHash, bob, bobHash)
 	if err := os.WriteFile(dexCfgPath, []byte(dexCfg), 0o644); err != nil {
 		return err
 	}
@@ -283,7 +294,22 @@ staticPasswords:
 	handler := app.New(s3Client, provider, verifier, &appCfg)
 
 	go http.Serve(appLn, handler) //nolint:errcheck
-	return waitForApp(appURL)
+	if err := waitForApp(appURL); err != nil {
+		return err
+	}
+
+	publicCfg := appCfg
+	publicCfg.BaseURL = fmt.Sprintf("http://127.0.0.1:%d", publicAppPort)
+	publicCfg.OIDC.ClientID = publicClientID
+	publicCfg.OIDC.ClientSecret = ""
+	publicCfg.OIDC.PublicClient = true
+	publicProvider, publicVerifier, err := middleware.NewOIDCProviderAndVerifier(ctx, publicCfg.OIDC)
+	if err != nil {
+		return fmt.Errorf("public oidc: %w", err)
+	}
+	publicAppURL = publicCfg.BaseURL
+	go http.Serve(publicAppLn, app.New(s3Client, publicProvider, publicVerifier, &publicCfg)) //nolint:errcheck
+	return waitForApp(publicAppURL)
 }
 
 func waitForApp(url string) error {
@@ -315,15 +341,21 @@ func stopStack(ctx context.Context) {
 // --- browser helper: walks the OIDC flow like a human with a browser ---
 
 type browser struct {
-	t   *testing.T
-	c   *http.Client // follows redirects, keeps cookies
-	jar *cookiejar.Jar
+	t       *testing.T
+	baseURL string
+	c       *http.Client // follows redirects, keeps cookies
+	jar     *cookiejar.Jar
 }
 
 func newBrowser(t *testing.T) *browser {
+	return newBrowserAt(t, appURL)
+}
+
+func newBrowserAt(t *testing.T, baseURL string) *browser {
 	jar, _ := cookiejar.New(nil)
 	return &browser{
-		t: t,
+		t:       t,
+		baseURL: baseURL,
 		c: &http.Client{
 			Jar: jar,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -340,7 +372,7 @@ func newBrowser(t *testing.T) *browser {
 // raw issues a request without following redirects (assert redirect targets).
 func (b *browser) raw(method, path string, body io.Reader) *http.Response {
 	b.t.Helper()
-	req, err := http.NewRequest(method, appURL+path, body)
+	req, err := http.NewRequest(method, b.baseURL+path, body)
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -361,7 +393,7 @@ func (b *browser) get(u string) (int, string) {
 	b.t.Helper()
 	appPage := !strings.HasPrefix(u, "http")
 	if appPage {
-		u = appURL + u
+		u = b.baseURL + u
 	}
 	resp, err := b.c.Get(u)
 	if err != nil {
@@ -388,13 +420,13 @@ var (
 
 // login walks: app -> dex login form -> consent page -> back to app.
 func (b *browser) login(username, password string) error {
-	resp, err := b.c.Get(appURL + "/")
+	resp, err := b.c.Get(b.baseURL + "/")
 	if err != nil {
 		return err
 	}
 	for i := 0; i < 10; i++ {
 		final := resp.Request.URL
-		if final.Host == strings.TrimPrefix(appURL, "http://") && b.idToken() != "" {
+		if final.Host == strings.TrimPrefix(b.baseURL, "http://") && b.idToken() != "" {
 			return nil
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -439,7 +471,7 @@ func (b *browser) mustLogin(username string) {
 }
 
 func (b *browser) idToken() string {
-	u, _ := url.Parse(appURL)
+	u, _ := url.Parse(b.baseURL)
 	for _, ck := range b.jar.Cookies(u) {
 		if ck.Name == "id_token" {
 			return ck.Value
@@ -505,7 +537,7 @@ func plainText(s string) string {
 // (login, list, forms) sets it.
 func (b *browser) csrfToken(t *testing.T) string {
 	t.Helper()
-	u, err := url.Parse(appURL)
+	u, err := url.Parse(b.baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,6 +593,16 @@ func TestLoginSetsSession(t *testing.T) {
 	}
 	if !strings.Contains(body, alice) {
 		t.Errorf("session page should show user %s", alice)
+	}
+}
+
+func TestPublicClientLoginSetsSession(t *testing.T) {
+	requireStack(t)
+	b := newBrowserAt(t, publicAppURL)
+	b.mustLogin(alice)
+	code, body := b.get("/")
+	if code != http.StatusOK || !strings.Contains(body, alice) {
+		t.Fatalf("public-client session: status %d, user shown %t", code, strings.Contains(body, alice))
 	}
 }
 

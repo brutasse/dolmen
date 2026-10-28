@@ -116,29 +116,34 @@ secret; if the key is present and that variable is unset, startup fails. S3
 credentials are not configuration at all; the standard AWS SDK credential
 chain applies (environment variables, shared config file, instance profile).
 
-| Key | Required | Meaning |
-| --- | --- | --- |
-| `oidc.issuer` | yes | OIDC issuer URL |
-| `oidc.client_id` | yes | OAuth client id |
-| `oidc.client_secret` | no | Name of the environment variable holding the OAuth client secret |
-| `s3.bucket` | yes | Bucket that holds the gists; the app enables its versioning and CORS on boot |
-| `s3.endpoint` | no | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS |
-| `s3.cache_size` | no | Memory budget for the read cache, for example `128MB` or `512MiB`. A bare number is bytes. Defaults to `128MB`, and `0` turns caching off |
-| `deleted_retention` | no | How long a deleted gist stays recoverable, as a Go duration such as `168h`. The `scrub` job erases gists past this age and sweeps orphan uploads of the same age. Defaults to `168h` |
-| `listen` | no | Listen address. Defaults to `:8080` |
-| `base_url` | no | Externally reachable origin; builds the OAuth redirect URI. Defaults to `http://localhost<listen>` |
+| Key                  | Required | Meaning                                                                                                                                                                              |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `oidc.issuer`        | yes      | OIDC issuer URL                                                                                                                                                                      |
+| `oidc.client_id`     | yes      | OAuth client id                                                                                                                                                                      |
+| `oidc.client_secret` | no       | Name of the environment variable holding the OAuth client secret                                                                                                                     |
+| `oidc.public_client` | no       | Enable the built-in PKCE login flow without a client secret                                                                                                                          |
+| `s3.bucket`          | yes      | Bucket that holds the gists. The app enables its versioning and CORS on boot                                                                                                         |
+| `s3.endpoint`        | no       | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS                                                                                                          |
+| `s3.cache_size`      | no       | Memory budget for the read cache, for example `128MB` or `512MiB`. A bare number is bytes. Defaults to `128MB`, and `0` turns caching off                                            |
+| `deleted_retention`  | no       | How long a deleted gist stays recoverable, as a Go duration such as `168h`. The `scrub` job erases gists past this age and sweeps orphan uploads of the same age. Defaults to `168h` |
+| `listen`             | no       | Listen address. Defaults to `:8080`                                                                                                                                                  |
+| `base_url`           | no       | Externally reachable origin. Builds the OAuth redirect URI. Defaults to `http://localhost<listen>`                                                                                   |
 
-`oidc.client_secret` is only needed for the app's own login flow. Without
-it, `/login` and `/callback` answer 503 and the app serves only requests
-carrying a token from elsewhere — typically an authenticating proxy (for
-example oauth2-proxy) that forwards the ID token as an
-`Authorization: Bearer` header. Requests without a valid token then answer
-401 instead of redirecting to `/login`, which is what a proxy watches for
-to trigger re-authentication. Every token is still verified against
-`oidc.issuer` and `oidc.client_id`: signature, audience, and expiry. That
-is why both stay required. In this mode the app never sets a session
-cookie, so the proxy owns the session lifetime entirely; the app only
-enforces the token's own `exp` claim.
+For a public OIDC client, set `oidc.public_client: true` and omit
+`oidc.client_secret`. Dolmen then runs its built-in authorization-code flow
+without a secret and protects the code exchange with PKCE S256. Register
+`<base_url>/callback` as the client's redirect URI.
+
+When neither `oidc.client_secret` nor `oidc.public_client` is configured,
+`/login` and `/callback` answer 503 and the app serves only requests carrying
+a token from elsewhere, typically an authenticating proxy (for example
+oauth2-proxy) that forwards the ID token as an `Authorization: Bearer` header.
+Requests without a valid token then answer 401 instead of redirecting to
+`/login`, which is what a proxy watches for to trigger re-authentication.
+Every token is still verified against `oidc.issuer` and `oidc.client_id`:
+signature, audience, and expiry. That is why both stay required. In this mode
+the app never sets a session cookie, so the proxy owns the session lifetime
+entirely. The app only enforces the token's own `exp` claim.
 
 The app always sends path-style S3 requests and pins the SDK region to
 `us-east-1`. S3-compatible providers route by endpoint, so this works.

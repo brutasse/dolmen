@@ -33,7 +33,7 @@ func New(s3Client *s3.Client, provider *oidc.Provider, verifier *oidc.IDTokenVer
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SecurityHeaders())
-		r.Use(middleware.OIDCMiddleware(verifier, cfg.OIDC.ClientSecret != ""))
+		r.Use(middleware.OIDCMiddleware(verifier, cfg.OIDC.LoginEnabled()))
 		r.Use(middleware.CSRF(middleware.CookieSecure(cfg.BaseURL)))
 
 		r.Handle("/static/*", web.StaticHandler())

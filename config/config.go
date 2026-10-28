@@ -60,15 +60,22 @@ func (c Config) RetentionDuration() (time.Duration, error) {
 	return d, nil
 }
 
-// OIDCConfig configures the authorization-code + PKCE login flow. The flow
-// is only available when ClientSecret is set; without it the app verifies
-// tokens issued by Issuer for ClientID but cannot run its own login.
+// OIDCConfig configures token verification and the authorization-code + PKCE
+// login flow.
 type OIDCConfig struct {
 	Issuer   string `yaml:"issuer"`
 	ClientID string `yaml:"client_id"`
 	// ClientSecret is the name of an environment variable holding the
 	// client secret. Load resolves it; the struct holds the value.
 	ClientSecret string `yaml:"client_secret"`
+	// PublicClient enables login without a client secret. PKCE protects the
+	// authorization code exchange.
+	PublicClient bool `yaml:"public_client"`
+}
+
+// LoginEnabled reports whether Dolmen should run its built-in OIDC flow.
+func (c OIDCConfig) LoginEnabled() bool {
+	return c.ClientSecret != "" || c.PublicClient
 }
 
 // S3Config configures the storage backend. Credentials are not part of the
@@ -175,9 +182,11 @@ func (c *Config) validate() error {
 	if c.OIDC.ClientID == "" {
 		add("oidc.client_id is required")
 	}
-	// An empty client_secret disables the built-in login flow: the app
-	// then only verifies tokens an authenticating proxy forwards, which
-	// needs the issuer and client id but no secret.
+	if c.OIDC.PublicClient && c.OIDC.ClientSecret != "" {
+		add("oidc.public_client and oidc.client_secret are mutually exclusive")
+	}
+	// Without either login mode, the app only verifies tokens an
+	// authenticating proxy forwards.
 	if c.OIDC.ClientSecret != "" {
 		v, ok := os.LookupEnv(c.OIDC.ClientSecret)
 		if !ok || v == "" {
