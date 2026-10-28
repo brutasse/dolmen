@@ -113,8 +113,10 @@ values matching the docker-compose dev stack.
 Non-secret values live in the file. A secret appears only as a reference:
 `oidc.client_secret` names the environment variable that holds the client
 secret; if the key is present and that variable is unset, startup fails. S3
-credentials are not configuration at all; the standard AWS SDK credential
-chain applies (environment variables, shared config file, instance profile).
+credentials normally use the standard AWS SDK credential chain (environment
+variables, shared config file, instance profile). For a secret agent that
+rotates credentials in place, `s3.credentials_file` points to a
+`credential_process` JSON file that Dolmen reloads before every S3 request.
 
 | Key | Required | Meaning |
 | --- | --- | --- |
@@ -124,6 +126,7 @@ chain applies (environment variables, shared config file, instance profile).
 | `s3.bucket` | yes | Bucket that holds the gists; the app enables its versioning and CORS on boot |
 | `s3.endpoint` | no | Custom endpoint, for example `https://sos-de-fra-1.exo.io`. Empty means AWS |
 | `s3.cache_size` | no | Memory budget for the read cache, for example `128MB` or `512MiB`. A bare number is bytes. Defaults to `128MB`, and `0` turns caching off |
+| `s3.credentials_file` | no | Path to a rotating `credential_process` JSON file containing `AccessKeyId`, `SecretAccessKey`, and optionally `SessionToken` |
 | `deleted_retention` | no | How long a deleted gist stays recoverable, as a Go duration such as `168h`. The `scrub` job erases gists past this age and sweeps orphan uploads of the same age. Defaults to `168h` |
 | `listen` | no | Listen address. Defaults to `:8080` |
 | `base_url` | no | Externally reachable origin; builds the OAuth redirect URI. Defaults to `http://localhost<listen>` |
@@ -243,9 +246,10 @@ docker run -d \
 ```
 
 The image runs as `nonroot` and contains nothing but the binary. The config
-file is mounted read-only at the path the entrypoint expects; override the
+file is mounted read-only at the path the entrypoint expects. Override the
 command arguments to point `-config` elsewhere. S3 credentials come from
-the usual AWS environment variables (or any other SDK credential provider).
+the usual AWS environment variables or another SDK credential provider. Set
+`s3.credentials_file` when a secret agent writes rotating credentials to disk.
 
 At startup the app configures the bucket it needs. It enables object
 versioning, because gist history is S3 versions. It also ensures a CORS rule

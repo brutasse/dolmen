@@ -67,6 +67,9 @@ func NewClient(ctx context.Context, sc dolmencfg.S3Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if sc.CredentialsFile != "" {
+		cfg.Credentials = credentialFileProvider{path: sc.CredentialsFile}
+	}
 
 	if sc.Endpoint != "" {
 		cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {

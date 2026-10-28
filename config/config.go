@@ -71,9 +71,8 @@ type OIDCConfig struct {
 	ClientSecret string `yaml:"client_secret"`
 }
 
-// S3Config configures the storage backend. Credentials are not part of the
-// configuration: the standard AWS SDK credential chain (environment
-// variables, shared config file, instance profile) applies.
+// S3Config configures the storage backend. Credentials normally come from the
+// standard AWS SDK credential chain.
 type S3Config struct {
 	Bucket string `yaml:"bucket"`
 	// Endpoint points at an S3-compatible provider (Exoscale SOS, s3mock,
@@ -83,6 +82,9 @@ type S3Config struct {
 	// "128MB" or "512MiB"; a bare number is bytes. Empty means
 	// DefaultCacheSize, "0" turns the cache off.
 	CacheSize string `yaml:"cache_size"`
+	// CredentialsFile is an optional credential_process JSON file. It is read
+	// for every signed request so a secret agent can rotate it in place.
+	CredentialsFile string `yaml:"credentials_file"`
 }
 
 // DefaultCacheSize bounds the read cache when CacheSize is unset. Typical

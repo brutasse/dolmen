@@ -32,6 +32,9 @@ s3:
   # is read only after a HEAD confirms its ETag, so cached reads are never
   # stale; a bare size is bytes. Default 128MB, and 0 turns the cache off.
   cache_size: 128MB
+  # Optional credential_process JSON file. Dolmen re-reads it before every
+  # S3 request so Vault Agent and similar secret agents can rotate it.
+  # credentials_file: /run/secrets/s3.json
   # Production example (path-style requests are always used):
   # bucket: my-gists
   # endpoint: https://sos-de-fra-1.exo.io
