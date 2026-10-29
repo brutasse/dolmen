@@ -95,6 +95,13 @@ h1, h2, h3 { line-height: 1.25; }
 .pill { display: inline-flex; align-items: center; height: 1.6rem; padding: 0 .7rem; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--border); color: var(--muted); font-size: .85rem; text-decoration: none; }
 .pill:hover { color: var(--accent); }
 
+@media (max-width: 720px) {
+    .head-inner { flex-wrap: wrap; gap: .65rem; }
+    .head-nav { flex: 1 0 100%; flex-wrap: wrap; gap: .5rem; }
+    .head-nav .btn, .head-nav .pill, .head-nav .user { white-space: nowrap; }
+    .head-nav .user { margin-left: auto; }
+}
+
 /* Footer */
 .site-foot { background: var(--panel); border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
 .site-foot .container { padding: .8rem 1rem; }
