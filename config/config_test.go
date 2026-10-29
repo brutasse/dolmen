@@ -61,7 +61,7 @@ s3:
 	}
 }
 
-func TestLoadWithoutLoginModeDisablesLogin(t *testing.T) {
+func TestLoadWithoutClientSecretDisablesLogin(t *testing.T) {
 	cfg, err := Load(write(t, `
 oidc:
   issuer: http://localhost:5556/dex
@@ -74,9 +74,6 @@ s3:
 	}
 	if cfg.OIDC.ClientSecret != "" {
 		t.Errorf("client secret = %q, want empty", cfg.OIDC.ClientSecret)
-	}
-	if cfg.OIDC.LoginEnabled() {
-		t.Error("login enabled without client_secret or public_client")
 	}
 }
 

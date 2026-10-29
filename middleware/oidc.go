@@ -27,10 +27,10 @@ func opaqueUserID(sub string) string {
 
 // OIDCMiddleware validates OIDC tokens and resolves an opaque user ID from
 // the mandatory sub claim; the email claim goes along as display metadata.
-// loginEnabled is false when the app has no built-in login flow. Then a
-// missing or invalid token answers 401 instead of a /login redirect, so an
-// authenticating proxy sees a status it can act on and re-authenticate the
-// user.
+// loginEnabled is false when the app has no built-in login flow (no client
+// secret): then a missing or invalid token answers 401 instead of a /login
+// redirect, so an authenticating proxy sees a status it can act on and
+// re-authenticate the user.
 func OIDCMiddleware(verifier *oidc.IDTokenVerifier, loginEnabled bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

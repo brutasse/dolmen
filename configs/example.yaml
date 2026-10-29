@@ -23,9 +23,6 @@ oidc:
   # are still verified against issuer and client_id; only the app's own
   # /login and /callback flow is disabled (they answer 503).
   client_secret: OIDC_CLIENT_SECRET
-  # For a public OIDC client, omit client_secret and enable this instead.
-  # The authorization-code flow is protected with PKCE.
-  # public_client: true
 
 s3:
   # Values below match the docker-compose dev stack (s3mock).

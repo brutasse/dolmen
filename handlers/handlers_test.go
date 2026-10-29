@@ -327,13 +327,13 @@ func TestGistFromFormKeyEntry(t *testing.T) {
 	}
 }
 
-func TestLoginDisabledWithoutConfiguredFlow(t *testing.T) {
+func TestLoginDisabledWithoutClientSecret(t *testing.T) {
 	h := &Handler{oidcCfg: config.OIDCConfig{Issuer: "http://issuer.example.com/dex", ClientID: "c"}}
 	for name, fn := range map[string]http.HandlerFunc{"Login": h.Login, "Callback": h.Callback} {
 		w := httptest.NewRecorder()
 		fn(w, httptest.NewRequest(http.MethodGet, "/"+strings.ToLower(name), nil))
 		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("%s without a login mode: code %d, want 503", name, w.Code)
+			t.Errorf("%s with empty client secret: code %d, want 503", name, w.Code)
 		}
 	}
 }

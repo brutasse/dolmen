@@ -120,7 +120,7 @@ func TestCallbackRejectsEmptyStateAndExpiresFlowCookies(t *testing.T) {
 }
 
 func TestCallbackStateMismatchRejected(t *testing.T) {
-	h := &Handler{oidcCfg: config.OIDCConfig{PublicClient: true}}
+	h := &Handler{oidcCfg: config.OIDCConfig{ClientSecret: "s"}}
 	req := httptest.NewRequest("GET", "/callback?code=x&state=attacker", nil)
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "victim"})
 	rec := httptest.NewRecorder()

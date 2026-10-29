@@ -31,9 +31,11 @@
     --fg: #1f2328;
     --muted: #59636e;
     --border: #d1d9e0;
-    --accent: #DA291C;
-    /* Brand red keeps white text AA-compliant on buttons and avatars. */
-    --accent-btn: #DA291C;
+    --accent: #0969da;
+    /* White-on-accent surfaces (.btn-primary, .avatar) need the emphasis
+       ramp, not --accent: the light-link accent is too dark against white in
+       dark mode, where #1f6feb is the one that keeps #fff legible. */
+    --accent-btn: #0969da;
     --danger: #cf222e;
     --code-bg: #f6f8fa;
     --notice-bg: #fff8c5;
@@ -53,8 +55,8 @@
         --fg: light-dark(#1f2328, #e6edf3);
         --muted: light-dark(#59636e, #9198a1);
         --border: light-dark(#d1d9e0, #3d444d);
-        --accent: light-dark(#DA291C, #ff5540);
-        --accent-btn: #DA291C;
+        --accent: light-dark(#0969da, #4493f8);
+        --accent-btn: light-dark(#0969da, #1f6feb);
         --danger: light-dark(#cf222e, #ff7b72);
         --code-bg: light-dark(#f6f8fa, #0d1117);
         --notice-bg: light-dark(#fff8c5, #4d2d00);
@@ -85,10 +87,10 @@ h1, h2, h3 { line-height: 1.25; }
 /* Header */
 .site-head { background: var(--panel); border-bottom: 1px solid var(--border); }
 .head-inner { max-width: 960px; margin: 0 auto; padding: .65rem 1rem; display: flex; justify-content: space-between; align-items: center; }
-.brand { display: inline-flex; align-items: baseline; gap: .35rem; font-weight: 700; font-size: 1.25rem; color: var(--fg); text-decoration: none; }
+.brand { display: inline-flex; align-items: baseline; gap: .35rem; font-weight: 700; font-size: 1.05rem; color: var(--fg); text-decoration: none; }
 /* Cropped viewBox puts the svg baseline (its bottom edge) at the stones'
    feet, so baseline alignment stands the dolmen on the text baseline. */
-.brand-mark { height: 1.5em; width: auto; }
+.brand-mark { height: 1.25em; width: auto; }
 .head-nav { display: flex; align-items: center; gap: .9rem; }
 .user { display: inline-flex; align-items: center; gap: .45rem; color: var(--muted); font-size: .85rem; }
 .avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent-btn); color: #fff; font-weight: 600; font-size: .8rem; text-transform: uppercase; }
@@ -270,9 +272,9 @@ pre.mermaid {
 
 /* File-drop affordances: solid = this row is replaced, dashed = this row
    receives the next file, overlay pill = what the whole drop will do. */
-.file-entry.dragover { outline: 2px solid var(--accent, #DA291C); outline-offset: 2px; border-radius: 6px; }
-.file-entry.dragtarget { outline: 2px dashed var(--accent, #DA291C); outline-offset: 2px; border-radius: 6px; }
-#dropOverlay { position: fixed; inset: .5rem; z-index: 40; display: none; pointer-events: none; border: 3px dashed var(--accent, #DA291C); border-radius: 8px; }
+.file-entry.dragover { outline: 2px solid var(--accent, #4b7bec); outline-offset: 2px; border-radius: 6px; }
+.file-entry.dragtarget { outline: 2px dashed var(--accent, #4b7bec); outline-offset: 2px; border-radius: 6px; }
+#dropOverlay { position: fixed; inset: .5rem; z-index: 40; display: none; pointer-events: none; border: 3px dashed var(--accent, #4b7bec); border-radius: 8px; }
 #dropOverlay.active { display: block; }
 .drop-hint { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .9rem; font-size: .85rem; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); white-space: nowrap; }
 
@@ -281,6 +283,6 @@ pre.mermaid {
 .attach-badge.is-error { border-style: solid; border-color: var(--danger, #c62828); color: var(--danger, #c62828); }
 
 /* Pending replace chip: a drop/paste awaits a decision on this row */
-.replace-chip { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; margin: 0 0 .6rem; border: 2px solid var(--accent, #DA291C); border-radius: 6px; background: var(--code-bg); box-shadow: 0 2px 10px rgba(0, 0, 0, .15); font-weight: 600; }
+.replace-chip { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; margin: 0 0 .6rem; border: 2px solid var(--accent, #4b7bec); border-radius: 6px; background: var(--code-bg); box-shadow: 0 2px 10px rgba(0, 0, 0, .15); font-weight: 600; }
 .chip-btn { font: inherit; font-size: .8rem; padding: .15rem .55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
-.chip-btn:hover { border-color: var(--accent, #DA291C); color: var(--accent, #DA291C); }
+.chip-btn:hover { border-color: var(--accent, #4b7bec); color: var(--accent, #4b7bec); }
