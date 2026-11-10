@@ -44,7 +44,15 @@ CDN. `go build` is the whole build.
   Preview tabs. Preview sends your unsaved draft, including the typed file
   name, to the server and shows exactly what saving would render. This needs
   JavaScript; without it the form works and the tabs stay hidden. The row
-  buttons are click-only, so Tab moves from the file name to the content.
+  Preview and Remove buttons are click-only; editor settings remain keyboard accessible.
+- **Editor settings**: Each text file has a settings icon that opens controls
+  for line wrapping, indentation (spaces or tabs), and indent size (2, 4, or 8).
+  Files start with no wrapping, spaces, and size 2; settings are independent
+  per file and reset on reload. Wrapping keeps logical line numbers aligned
+  and never inserts newlines into the saved file. Tab inserts indentation or
+  indents selected lines; Shift+Tab outdents. Press Escape, then Tab (or
+  Shift+Tab) to leave the editor. Changing settings does not convert existing
+  whitespace or mark the draft as changed.
 - **Diagrams and math**: A ` ```mermaid ` fence becomes a rendered diagram.
   Math uses the delimiters GitHub documents: `$...$` for inline and `$$...$$`
   for display. The binary ships Mermaid (12.1.0) and MathJax (3.2.2)
@@ -207,6 +215,7 @@ Unit tests:
 
 ```
 go test ./...
+node --test web/editor_settings_test.cjs
 ```
 
 End-to-end tests against real s3mock and Dex containers (Docker required):

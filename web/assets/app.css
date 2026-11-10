@@ -157,14 +157,15 @@ input[type="text"], input[type="search"], textarea, select {
     background: var(--panel); color: var(--fg); font: inherit;
 }
 textarea { font-family: var(--font-mono); font-size: .85rem; line-height: 1.45; resize: vertical; max-height: 80vh; }
-/* line-numbered editor: wrap=off keeps one number per visual line */
-/* line-numbered editor: wrap=off keeps one number per visual line. The
-   gutter is absolutely positioned so its (potentially huge) content height
-   never stretches the editor; syncLnum sets the textarea's margin-left to
-   the gutter width whenever the digit count changes. */
+/* The gutter overlays the editor. JS measures logical line heights when
+   wrapping is enabled and reserves the gutter's width on the textarea. */
 .editor { position: relative; }
 .editor .lnum { position: absolute; top: 0; bottom: 0; left: 0; overflow: hidden; white-space: pre; text-align: right; min-width: 1.6em; padding: .45rem .4rem; font-family: var(--font-mono); font-size: .85rem; line-height: 1.45; color: var(--muted); user-select: none; background: var(--code-bg); border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; }
-.editor textarea { display: block; width: 100%; height: 70vh; border-left: 0; border-radius: 0 6px 6px 0; }
+.editor textarea { tab-size: 2; white-space: pre; overflow-wrap: normal; display: block; width: 100%; height: 70vh; border-left: 0; border-radius: 0 6px 6px 0; }
+.editor textarea[wrap="soft"] { white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+.editor .lnum-line { display: block; }
+.editor-mirror { position: absolute; top: 0; left: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.editor-mirror-line { white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
 /* focus ring wraps gutter + textarea: box-shadow follows the wrapper's
    border-radius, which outline does not reliably */
 .editor textarea:focus { outline: none; }
@@ -178,7 +179,17 @@ label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .
 
 .file-entry { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; }
 .file-entry-head { display: flex; gap: .75rem; align-items: center; margin-bottom: .5rem; }
-.file-entry-head input { flex: 1; }
+.file-entry-head input { flex: 1; min-width: 0; }
+.editor-settings-slot { display: contents; }
+.editor-settings-toggle { flex-shrink: 0; }
+.editor-settings { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; padding: .65rem; margin-bottom: .5rem; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; }
+.editor-settings label { margin: 0; }
+.editor-settings select { display: block; margin: .25rem 0 0; }
+.editor-keyboard-hint { flex-basis: 100%; margin: 0; color: var(--muted); font-size: .8rem; }
+@media (max-width: 600px) {
+    .file-entry-head { flex-wrap: wrap; gap: .5rem; }
+    .file-entry-head input { flex-basis: 100%; }
+}
 
 /* File boxes (view page) */
 .file { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; margin: 0 0 1.25rem; }
