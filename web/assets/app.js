@@ -40,39 +40,230 @@
             });
     });
 
-    // File line-number gutters. Textareas are wrap="off" so one logical
-    // line is exactly one visual line and the numbers always align; the
-    // gutter text is rebuilt only when the line count changes.
-    function syncLnum(ta) {
-        var box = ta.parentNode;
-        if (!box || box.className !== 'editor') return; // clipboard-helper textarea
-        var gutter = box.querySelector('.lnum');
-        if (!gutter) return;
-        var lines = (ta.value.match(/\n/g) || []).length + 1;
-        if (ta._lnum !== lines) {
-            ta._lnum = lines;
-            var nums = '';
-            for (var n = 1; n <= lines; n++) nums += n + '\n';
-            gutter.textContent = nums;
-            // the gutter overlays the wrapper; the textarea keeps clear of
-            // it. width: auto cannot fill for form controls (UA sizes them
-            // from cols under appearance: auto), so compute it explicitly.
-            ta.style.marginLeft = gutter.offsetWidth + 'px';
-            ta.style.width = 'calc(100% - ' + gutter.offsetWidth + 'px)';
+    // Per-file settings live on the textarea, so reordering never changes
+    // them and no editor preferences enter the submitted gist.
+    var editors = new WeakMap();
+    var nextEditorID = 0;
+    function scheduleEditor(ta) {
+        var state = editors.get(ta);
+        if (!state || state.frame) return;
+        state.frame = requestAnimationFrame(function () {
+            state.frame = 0;
+            layoutEditor(ta, state);
+        });
+    }
+    function layoutEditor(ta, state) {
+        var visible = ta.getClientRects().length > 0;
+        state.button.classList.toggle('hidden', !visible);
+        if (!visible) {
+            state.button.setAttribute('aria-expanded', 'false');
+            state.panel.classList.add('hidden');
+            return;
         }
+        var gutter = state.gutter;
+        var lines = ta.value.split('\n');
+        var style = getComputedStyle(ta);
+        // Reserve a stable width before measuring wraps, including the change
+        // from e.g. 99 to 100 lines. A ch is a monospace digit's width.
+        var digits = String(lines.length).length;
+        gutter.style.width = 'calc(' + Math.max(2, digits) + 'ch + .8rem + 1px)';
+        var gutterWidth = gutter.getBoundingClientRect().width;
+        ta.style.marginLeft = gutterWidth + 'px';
+        ta.style.width = 'calc(100% - ' + gutterWidth + 'px)';
+        var scrollbar = ta.offsetHeight - ta.clientHeight - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth);
+        gutter.style.bottom = Math.max(0, scrollbar) + 'px';
+        var width = ta.getBoundingClientRect().width - (ta.offsetWidth - ta.clientWidth) -
+            parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        var key = [width, ta.clientHeight, style.font, style.lineHeight, style.letterSpacing, state.wrap, state.size].join('|');
+        var content = state.wrap === 'soft' ? ta.value : lines.length;
+        if (state.content === content && state.layoutKey === key) {
+            gutter.scrollTop = ta.scrollTop;
+            return;
+        }
+        state.content = content;
+        state.layoutKey = key;
+        var numbers = document.createDocumentFragment();
+        var heights;
+        if (state.wrap === 'soft') {
+            var mirror = state.mirror;
+            mirror.style.width = Math.max(0, width) + 'px';
+            mirror.style.font = style.font;
+            mirror.style.lineHeight = style.lineHeight;
+            mirror.style.letterSpacing = style.letterSpacing;
+            mirror.style.tabSize = state.size;
+            var measured = document.createDocumentFragment();
+            lines.forEach(function (line) {
+                var row = document.createElement('div');
+                row.className = 'editor-mirror-line';
+                row.textContent = line || '\u200b';
+                measured.appendChild(row);
+            });
+            mirror.replaceChildren(measured);
+            // Read all heights together, after writing the measurement DOM.
+            heights = Array.from(mirror.children, function (row) { return row.getBoundingClientRect().height; });
+            mirror.replaceChildren();
+        }
+        lines.forEach(function (_, i) {
+            var row = document.createElement('span');
+            row.className = 'lnum-line';
+            row.textContent = i + 1;
+            row.style.height = (heights ? heights[i] : parseFloat(style.lineHeight)) + 'px';
+            numbers.appendChild(row);
+        });
+        // Match the textarea's scrollable extent, including bottom padding,
+        // so the gutter remains aligned at the very bottom of the document.
+        var bottom = document.createElement('span');
+        bottom.className = 'lnum-line';
+        bottom.style.height = Math.max(0, ta.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) -
+            (heights ? heights.reduce(function (a, b) { return a + b; }, 0) : lines.length * parseFloat(style.lineHeight))) + 'px';
+        numbers.appendChild(bottom);
+        gutter.replaceChildren(numbers);
         gutter.scrollTop = ta.scrollTop;
     }
-    document.addEventListener('input', function (e) {
-        if (e.target.tagName === 'TEXTAREA') syncLnum(e.target);
+    function initEditor(entry) {
+        var ta = entry.querySelector('.editor textarea');
+        var template = document.getElementById('editorSettingsTemplate');
+        if (!ta || !template || editors.has(ta)) return;
+        var controls = template.content.cloneNode(true);
+        var button = controls.querySelector('.editor-settings-toggle');
+        var panel = controls.querySelector('.editor-settings');
+        panel.id = 'editor-settings-' + (++nextEditorID);
+        button.setAttribute('aria-controls', panel.id);
+        entry.querySelector('.editor-settings-slot').appendChild(button);
+        entry.querySelector('.file-entry-head').after(panel);
+        var mirror = document.createElement('div');
+        mirror.className = 'editor-mirror';
+        mirror.setAttribute('aria-hidden', 'true');
+        ta.parentNode.appendChild(mirror);
+        var state = {
+            button: button, panel: panel, mirror: mirror,
+            gutter: ta.parentNode.querySelector('.lnum'),
+            wrap: 'off', indent: 'spaces', size: 2, frame: 0
+        };
+        editors.set(ta, state);
+        state.resize = new ResizeObserver(function () { scheduleEditor(ta); });
+        state.resize.observe(ta);
+        state.visibility = new MutationObserver(function () { scheduleEditor(ta); });
+        state.visibility.observe(ta, { attributes: true, attributeFilter: ['class'] });
+        scheduleEditor(ta);
+    }
+    window.gistInitEditor = initEditor;
+    window.gistDestroyEditor = function (entry) {
+        var ta = entry.querySelector('.editor textarea');
+        var state = editors.get(ta);
+        if (!state) return;
+        cancelAnimationFrame(state.frame);
+        state.resize.disconnect();
+        state.visibility.disconnect();
+        editors.delete(ta);
+    };
+    document.querySelectorAll('.file-entry').forEach(initEditor);
+    if (document.fonts) document.fonts.ready.then(function () {
+        document.querySelectorAll('.editor textarea').forEach(function (ta) {
+            var state = editors.get(ta);
+            if (state) state.layoutKey = null;
+            scheduleEditor(ta);
+        });
     });
-    document.addEventListener('focusin', function (e) {
-        if (e.target.tagName === 'TEXTAREA') syncLnum(e.target);
+    document.addEventListener('click', function (e) {
+        var button = e.target.closest('.editor-settings-toggle');
+        if (!button) return;
+        var state = editors.get(button.closest('.file-entry').querySelector('textarea'));
+        var open = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', String(open));
+        state.panel.classList.toggle('hidden', !open);
     });
-    // scroll does not bubble; capture catches every textarea
+    document.addEventListener('change', function (e) {
+        var setting = e.target.dataset.editorSetting;
+        if (!setting) return;
+        var ta = e.target.closest('.file-entry').querySelector('textarea');
+        var state = editors.get(ta);
+        state[setting] = setting === 'size' ? Number(e.target.value) : e.target.value;
+        ta.wrap = state.wrap;
+        ta.style.tabSize = state.size;
+        if (state.wrap === 'soft') ta.scrollLeft = 0;
+        scheduleEditor(ta);
+    });
+    document.addEventListener('input', function (e) { scheduleEditor(e.target); });
+    document.addEventListener('focusin', function (e) { scheduleEditor(e.target); });
+    // Scrolling needs no text measurement or line counting.
     document.addEventListener('scroll', function (e) {
-        if (e.target.tagName === 'TEXTAREA') syncLnum(e.target);
+        var state = editors.get(e.target);
+        if (state) state.gutter.scrollTop = e.target.scrollTop;
     }, true);
-    document.querySelectorAll('.editor textarea').forEach(syncLnum);
+
+    function indentEdit(ta, state, outdent) {
+        var text = ta.value;
+        var start = ta.selectionStart, end = ta.selectionEnd;
+        var direction = ta.selectionDirection;
+        var lineStart = text.slice(0, start).lastIndexOf('\n') + 1;
+        if (!outdent && start === end) {
+            var column = 0;
+            for (var c of text.slice(lineStart, start)) {
+                column += c === '\t' ? state.size - column % state.size : 1;
+            }
+            var insertion = state.indent === 'tabs' ? '\t' : ' '.repeat(state.size - column % state.size);
+            return { start: start, end: end, text: insertion,
+                selectionStart: start + insertion.length, selectionEnd: start + insertion.length, direction: direction };
+        }
+        var last = end > start && text[end - 1] === '\n' ? end - 1 : end;
+        var lineEnd = text.indexOf('\n', last);
+        if (lineEnd < 0) lineEnd = text.length;
+        var lines = text.slice(lineStart, lineEnd).split('\n');
+        var edits = [], offset = lineStart;
+        var replacement = lines.map(function (line) {
+            var remove = 0, insert = '';
+            if (outdent) {
+                if (line[0] === '\t') remove = 1;
+                else {
+                    while (remove < state.size && line[remove] === ' ') remove++;
+                }
+            } else insert = state.indent === 'tabs' ? '\t' : ' '.repeat(state.size);
+            edits.push({ offset: offset, remove: remove, insert: insert.length });
+            offset += line.length + 1;
+            return insert + line.slice(remove);
+        }).join('\n');
+        function adjusted(position) {
+            var delta = 0;
+            edits.forEach(function (edit) {
+                if (position >= edit.offset) delta += edit.insert - Math.min(edit.remove, position - edit.offset);
+            });
+            return position + delta;
+        }
+        return { start: lineStart, end: lineEnd, text: replacement,
+            selectionStart: adjusted(start), selectionEnd: adjusted(end), direction: direction };
+    }
+    document.addEventListener('keydown', function (e) {
+        var ta = e.target, state = editors.get(ta);
+        if (!state || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key === 'Escape') { state.escapeTab = true; return; }
+        if (e.key !== 'Tab') { state.escapeTab = false; return; }
+        if (state.escapeTab) { state.escapeTab = false; return; }
+        e.preventDefault();
+        var edit = indentEdit(ta, state, e.shiftKey);
+        if (ta.value.slice(edit.start, edit.end) === edit.text) return;
+        var top = ta.scrollTop, left = ta.scrollLeft;
+        ta.setSelectionRange(edit.start, edit.end);
+        // insertText keeps textarea edits in the browser's native undo stack.
+        // setRangeText is the compatibility fallback when the command is absent.
+        var before = ta.value;
+        var inputSeen = false;
+        var onInput = function () { inputSeen = true; };
+        ta.addEventListener('input', onInput);
+        try { document.execCommand('insertText', false, edit.text); } catch (_) { /* fallback below */ }
+        ta.removeEventListener('input', onInput);
+        if (ta.value === before) ta.setRangeText(edit.text, edit.start, edit.end, 'end');
+        ta.setSelectionRange(edit.selectionStart, edit.selectionEnd, edit.direction);
+        ta.scrollTop = top;
+        ta.scrollLeft = left;
+        var entry = ta.closest('.file-entry');
+        if (entry) entry._dropped = false;
+        if (!inputSeen) ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    document.addEventListener('focusout', function (e) {
+        var state = editors.get(e.target);
+        if (state) state.escapeTab = false;
+    });
 
     // Fenced code blocks: a button per block.
     document.querySelectorAll('.file-body .codeblock').forEach(function (block) {

@@ -17,6 +17,7 @@
                     <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
                     <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
                 </span>
+                <span class="editor-settings-slot"></span>
                 <span class="grip hidden" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
                 <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
             </div>
@@ -36,6 +37,7 @@
                     <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
                     <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
                 </span>
+                <span class="editor-settings-slot"></span>
                 <span class="grip hidden" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
                 <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
             </div>
@@ -52,6 +54,22 @@
     </p>
 </form>
 
+<template id="editorSettingsTemplate">
+    <button type="button" class="editor-settings-toggle btn btn-sm btn-secondary" aria-label="Editor settings" title="Editor settings" aria-expanded="false"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg></button>
+    <div class="editor-settings hidden">
+        <label>Line wrapping
+            <select data-editor-setting="wrap"><option value="off" selected>No wrap</option><option value="soft">Wrap</option></select>
+        </label>
+        <label>Indentation
+            <select data-editor-setting="indent"><option value="spaces" selected>Spaces</option><option value="tabs">Tabs</option></select>
+        </label>
+        <label>Indent size
+            <select data-editor-setting="size"><option value="2" selected>2</option><option value="4">4</option><option value="8">8</option></select>
+        </label>
+        <p class="editor-keyboard-hint">Tab indents; Shift+Tab outdents. Press Escape, then Tab to leave the editor.</p>
+    </div>
+</template>
+
 <script>
     let fileIndex = {{len .Gist.Files}};
     if (fileIndex === 0) fileIndex = 1;
@@ -63,6 +81,7 @@
                 <button type="button" tabindex="-1" class="tab tab-edit is-active" data-mode="edit">Edit</button>
                 <button type="button" tabindex="-1" class="tab tab-preview" data-mode="preview">Preview</button>
             </span>
+            <span class="editor-settings-slot"></span>
             <span class="grip" title="Drag to reorder"><svg class="i" aria-hidden="true"><use href="#i-grip"/></svg></span>
             <button type="button" tabindex="-1" class="remove-file btn btn-sm btn-secondary btn-danger"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
         </div>
@@ -77,14 +96,18 @@
         div.innerHTML = entryHTML(fileIndex);
         document.getElementById('files').appendChild(div);
         fileIndex++;
+        if (window.gistInitEditor) window.gistInitEditor(div);
         return div;
     };
     document.getElementById('addFile').addEventListener('click', addEntry);
     window.gistAddEntry = addEntry; // used by the attachment drop handler in app.js
 
     document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('remove-file')) {
-            e.target.closest('.file-entry').remove();
+        const remove = e.target.closest('.remove-file');
+        if (remove) {
+            const entry = remove.closest('.file-entry');
+            if (window.gistDestroyEditor) window.gistDestroyEditor(entry);
+            entry.remove();
             if (window.gistUpdateSaveGate) window.gistUpdateSaveGate();
         }
     });
