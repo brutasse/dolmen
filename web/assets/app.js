@@ -892,6 +892,117 @@
         t.textContent = relTime(t.getAttribute('datetime'));
     });
 
+    // --- Line anchors on the view page. --------------------------------------
+    // The gutter numbers are the links: #L5 and #L5-L8 for the first
+    // line-anchored file, #file-{slug}-L5 (and -L8) for a named one, and
+    // #file-{slug} for the file box itself. A range has no DOM id of its own,
+    // so the highlight is applied here. Clicks set the fragment without
+    // moving the page — the scroll to the target happens only on page load,
+    // when the fragment is the reason for arriving. Single lines still jump
+    // natively without JS (their ids are real), which is what a no-script
+    // reader gets. Shift-clicking a number extends the selection from the
+    // anchor (the line a plain click last landed on) to the clicked line,
+    // replacing the hash: a shareable range, no history entry.
+    var anchoredFiles = document.querySelectorAll('section.file[data-anchored]');
+    if (anchoredFiles.length) {
+        var lineAnchorRE = /^#(file-([a-z0-9-]+?)-L(\d+)(-L(\d+))?|file-([a-z0-9-]+)|L(\d+)(-L(\d+))?)$/;
+        // The fixed end of a range, like the anchor of a text selection: a
+        // plain click (or load) sets it from the hash; a shift-click moves
+        // only the other end, so the range always spans anchor to the latest
+        // shift-click. null until the first line is anchored.
+        var anchor = null; // { section, prefix, n }
+        // Land the page on the anchored line: centered when the page can
+        // hold it, and below the top edge by the .ln scroll-margin when the
+        // line sits too high to center — never stuck to the very top.
+        function scrollLand(row, ln) {
+            var top = row.getBoundingClientRect().top + window.pageYOffset;
+            var centered = top - window.innerHeight / 2;
+            if (centered >= 0) {
+                window.scrollTo(0, centered);
+                return;
+            }
+            var pad = parseFloat(window.getComputedStyle(ln).scrollMarginTop) || 48;
+            window.scrollTo(0, Math.max(top - pad, 0));
+        }
+        // Highlight lines a..b of section. land is the arrival cue of a page
+        // load (flash the first row, land the page on it); a click or a
+        // history step only paints the range, where the page stays put.
+        // Returns a's row, or null when a is beyond the file's lines.
+        function highlight(section, prefix, a, b, land) {
+            var ln = document.getElementById(prefix + a);
+            if (!ln || !section.contains(ln)) return null;
+            var row = ln.closest('.line');
+            if (!row) return null;
+            for (var r = row, n = 0; r && n < b - a + 1; r = r.nextElementSibling, n++) {
+                if (!r.classList.contains('line')) break;
+                r.classList.add('hl');
+                if (n === 0 && land) {
+                    r.classList.add('arrive');
+                    r.addEventListener('animationend', function () { r.classList.remove('arrive'); }, { once: true });
+                    scrollLand(r, ln);
+                }
+            }
+            return row;
+        }
+        function applyLineAnchor(land) {
+            document.querySelectorAll('section.file .line.hl').forEach(function (row) {
+                row.classList.remove('hl', 'arrive');
+            });
+            var m = lineAnchorRE.exec(location.hash);
+            if (!m) return;
+            var slug = m[2] !== undefined ? m[2] : m[6];
+            var section;
+            if (slug !== undefined) {
+                section = document.getElementById('file-' + slug);
+                if (!section || !section.hasAttribute('data-anchored')) return;
+            } else {
+                section = anchoredFiles[0]; // bare #L…: the first line-anchored file
+            }
+            var prefix = slug !== undefined ? 'file-' + slug + '-L' : 'L';
+            var start = m[2] !== undefined ? m[3] : m[7];
+            var end = m[2] !== undefined ? (m[5] !== undefined ? m[5] : m[3]) : (m[9] !== undefined ? m[9] : m[7]);
+            var a = parseInt(start, 10), b = parseInt(end, 10);
+            if (a > b) {
+                a = parseInt(end, 10);
+                b = parseInt(start, 10);
+            }
+            if (highlight(section, prefix, a, b, land)) {
+                anchor = { section: section, prefix: prefix, n: a };
+            }
+        }
+        // A click on a gutter number must set the fragment without the
+        // native jump: preventDefault keeps the scroll position, the hash is
+        // written by pushState (plain click) or replaceState (shift-click),
+        // and the highlight is painted directly. A shift-click in another
+        // file re-anchors there instead.
+        document.addEventListener('click', function (e) {
+            var link = e.target.closest && e.target.closest('a.lnlinks');
+            if (!link) return;
+            e.preventDefault();
+            var section = link.closest('section.file[data-anchored]');
+            if (!section) return;
+            var n = parseInt(link.textContent, 10);
+            if (!isFinite(n)) return;
+            var range = e.shiftKey && anchor !== null && anchor.section === section;
+            var prefix = range ? anchor.prefix
+                : (section === anchoredFiles[0] ? 'L' : 'file-' + section.id.slice(5) + '-L');
+            var a = range ? Math.min(anchor.n, n) : n;
+            var b = range ? Math.max(anchor.n, n) : n;
+            if (!range) anchor = { section: section, prefix: prefix, n: n };
+            var hash = '#' + prefix + a + (b > a ? '-L' + b : '');
+            if (location.hash !== hash) {
+                if (e.shiftKey) history.replaceState(null, '', hash);
+                else history.pushState(null, '', hash);
+                document.querySelectorAll('section.file .line.hl').forEach(function (row) {
+                    row.classList.remove('hl', 'arrive');
+                });
+                highlight(section, prefix, a, b, false);
+            }
+        });
+        applyLineAnchor(true); // page load: the fragment is why we arrived
+        window.addEventListener('hashchange', function () { applyLineAnchor(false); });
+    }
+
     // --- Theme toggle: system -> light -> dark, remembered in localStorage.
     // The head script already applied the stored choice before paint, so this
     // only paints the button and wires the cycle. "system" removes the

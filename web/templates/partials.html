@@ -23,7 +23,7 @@
 {{end}}
 
 {{define "filebox"}}
-<section class="file">
+<section class="file" {{if .File.FileSlug}}id="file-{{.File.FileSlug}}" data-anchored{{end}}>
     <header class="file-head">
         <h2 class="file-name">{{.File.Name}}</h2>
         <span class="file-actions">

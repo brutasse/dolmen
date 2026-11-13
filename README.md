@@ -36,6 +36,13 @@ CDN. `go build` is the whole build.
   collapsibles, `<kbd>`, and friends survive; scripts, frames, and event
   handlers don't. Code files get syntax highlighting with line numbers, driven
   by the file extension. Fenced code blocks in Markdown get highlighting too.
+   Every line of a text file is an anchor: `#L5`, the range `#L5-L9`, and
+   `#file-{name}-L5` for a file in a multi-file gist, where `{name}` is the
+   file name with non-alphanumerics as dashes. The line number in the gutter
+   is the link: clicking it sets the fragment and highlights the target
+   without scrolling — the scroll happens only when the page loads with the
+   fragment. The anchor survives switching versions, and shift-clicking
+   another number extends the range from the last clicked line.
 - **Naming**: The first file's name titles the gist. A submitted file without
   a name becomes `gistfile.txt`, `gistfile.1.txt`, and so on. Two files with
   the same name are a save error; the app never renames a file silently. The

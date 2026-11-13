@@ -197,6 +197,42 @@ func TestRenderViewVersionBanner(t *testing.T) {
 	}
 }
 
+// renderView assigns the line-anchor ids: the first line-anchored file owns
+// the bare L prefix, the others get file-namespaced ones, and the markdown
+// file gets neither — but every anchored file's section carries the
+// #file-{slug} target and the data-anchored marker JS resolves against.
+func TestRenderViewLineAnchors(t *testing.T) {
+	h := &Handler{files: newFileRenderer(), retention: 7 * 24 * time.Hour}
+	gist := &models.Gist{ID: "abc", Files: []models.File{
+		{Name: "main.go", Content: "package main\nfunc main() {}\n"},
+		{Name: "doc.md", Content: "# t\n"},
+		{Name: "notes.unknownext", Content: "hello <b>x</b>\nworld\n"},
+	}}
+	rec := httptest.NewRecorder()
+	h.renderView(rec, gist, nil, "u", "u@example.com", "", "tok")
+	out := rec.Body.String()
+	for _, want := range []string{
+		`id="file-main-go" data-anchored`,
+		`id="file-notes-unknownext" data-anchored`,
+		`id="L2"`, // first anchored file: bare prefix
+		`id="file-notes-unknownext-L2"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("view missing %q", want)
+		}
+	}
+	// The markdown section carries no line anchors and no file id.
+	docStart := strings.Index(out, `<h2 class="file-name">doc.md</h2>`)
+	docEnd := strings.Index(out[docStart:], "</section>")
+	if docStart < 0 || docEnd < 0 {
+		t.Fatal("doc.md section not found")
+	}
+	doc := out[docStart : docStart+docEnd]
+	if strings.Contains(doc, `id="L`) || strings.Contains(doc, "lnlinks") || strings.Contains(doc, "data-anchored") {
+		t.Error("markdown section carries line anchors")
+	}
+}
+
 func TestGistFromFormNaming(t *testing.T) {
 	v := url.Values{
 		"file0_name": {""}, "file0_content": {"one"},
@@ -245,7 +281,7 @@ func TestGistFromFormCRLF(t *testing.T) {
 	if strings.Contains(gist.Files[0].Content, "\r") {
 		t.Error("CRLF survived into stored content")
 	}
-	res := newFileRenderer().Render("a.md", gist.Files[0].Content)
+	res := newFileRenderer().Render("a.md", gist.Files[0].Content, "L")
 	if body := string(res.Body); !strings.Contains(body, `<table class="frontmatter">`) ||
 		strings.Contains(body, "<h2") {
 		t.Errorf("front matter did not survive browser line endings: %s", body)
