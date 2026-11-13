@@ -114,6 +114,8 @@ func (h *Handler) renderView(w http.ResponseWriter, gist *models.Gist, versions 
 	if currentVid != "" {
 		rawSuffix = "?vid=" + url.QueryEscape(currentVid)
 	}
+	usedSlugs := map[string]bool{}
+	firstAnchored := true
 	for _, file := range gist.Files {
 		raw := template.URL(rawURL(gist.ID, file.Name) + rawSuffix)
 		if file.IsBlob() {
@@ -129,9 +131,22 @@ func (h *Handler) renderView(w http.ResponseWriter, gist *models.Gist, versions 
 			})
 			continue
 		}
-		fr := h.files.Render(file.Name, file.Content)
+		var slug, linePrefix string
+		if !models.IsMarkdown(file.Name) {
+			// The first line-anchored file owns the bare L prefix (single-file
+			// gists, GitHub-style); the rest are namespaced by slug.
+			slug = fileAnchorSlug(file.Name, usedSlugs)
+			if firstAnchored {
+				linePrefix = "L"
+				firstAnchored = false
+			} else {
+				linePrefix = "file-" + slug + "-L"
+			}
+		}
+		fr := h.files.Render(file.Name, file.Content, linePrefix)
 		fr.Kind = "text"
 		fr.RawURL = raw
+		fr.FileSlug = slug
 		data.NeedsMath = data.NeedsMath || fr.NeedsMath
 		data.NeedsMermaid = data.NeedsMermaid || fr.NeedsMermaid
 		data.RenderedFiles = append(data.RenderedFiles, fr)

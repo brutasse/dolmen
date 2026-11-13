@@ -21,7 +21,9 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "CSRF token mismatch", http.StatusForbidden)
 		return
 	}
-	fr := h.files.Render(form.Get("name"), form.Get("content"))
+	// A draft previews as the first line-anchored file (the "L" prefix),
+	// matching what the view renders for a single-file gist.
+	fr := h.files.Render(form.Get("name"), form.Get("content"), "L")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(struct {
 		HTML         string `json:"html"`

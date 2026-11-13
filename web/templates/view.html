@@ -30,7 +30,13 @@
 {{if .Versions}}
 <script>
     document.getElementById('versionSelect').addEventListener('change', function() {
-        if (this.value) window.location = this.value;
+        if (this.value) {
+            // A line or file anchor survives the version switch: the target
+            // may have moved between versions, but the same number is the
+            // closest thing the new version has.
+            var m = /^#(file-[a-z0-9-]+(-L\d+(-L\d+)?)?|L\d+(-L\d+)?)$/.exec(location.hash);
+            window.location = this.value + (m ? m[0] : '');
+        }
     });
 </script>
 {{end}}

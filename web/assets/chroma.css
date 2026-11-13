@@ -15,6 +15,7 @@
   --code-keyword: #cf222e; --code-entity: #8250df; --code-variable: #953800;
   --code-tag: #116329; --code-string: #0a3069; --code-constant: #0550ae;
   --code-comment: #57606a; --code-linenum: #59636e;
+  --code-line-hl-bg: #fff8c5;
   --code-error: #cf222e; --code-error-bg: #ffebe9;
   --code-deleted: #86181d; --code-deleted-bg: #ffebe9;
   --code-inserted: #116329; --code-inserted-bg: #dafbe1;
@@ -30,6 +31,7 @@
     --code-constant: light-dark(#0550ae, #79c0ff);
     --code-comment: light-dark(#57606a, #8b949e);
     --code-linenum: light-dark(#59636e, #9198a1);
+    --code-line-hl-bg: light-dark(#fff8c5, rgba(56, 139, 253, 0.2));
     --code-error: light-dark(#cf222e, #ff7b72);
     --code-error-bg: light-dark(#ffebe9, rgba(248, 81, 73, .15));
     --code-deleted: light-dark(#86181d, #ffa198);
@@ -45,16 +47,37 @@
 
 /* A highlighted file gets one .line row per source line, holding the .ln count
    and the .cl code; as flex items, a wrapped line of code wraps under the
-   gutter instead of around it. */
-.chroma .line { display: flex }
+   gutter instead of around it. The plain fallback emits the same row shape,
+   so both kinds of code file share these rules. */
+.chroma .line, .fallback .line { display: flex }
 
 /* The gutter is decoration: unselectable, so a selection that starts there
    does not drag numbers into the clipboard, and on the muted ramp because the
-   numbers a reader glances at once are the least significant text on screen. */
-.chroma .ln {
+   numbers a reader glances at once are the least significant text on screen.
+   The count is also the fragment target, so a native jump (page load, back
+   button, no-JS link) keeps the line this far from the top edge; the view
+   page's arrival scroll reads the same distance. */
+.chroma .ln, .fallback .ln {
   color: var(--code-linenum); white-space: pre; user-select: none;
-  margin-right: .4em; padding: 0 .4em;
+  margin-right: .4em; padding: 0 .4em; scroll-margin-top: 3rem;
 }
+
+/* The row a line anchor landed on. The id lives on the .ln count, so the
+   native fragment jump lands at the row's start; the .hl class is what JS
+   adds for a range, where no single id exists. */
+.chroma .line.hl, .fallback .line.hl { background-color: var(--code-line-hl-bg); }
+
+/* Arrival flash: settles from the page's notice tint into the steady
+   highlight, so a followed link is visibly landed on. Both tokens are app.css'
+   (variables only, as this file's rules keep). */
+@keyframes line-arrive { from { background-color: var(--notice-bg); } }
+.line.arrive { animation: line-arrive 1.2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .line.arrive { animation: none; } }
+
+/* The gutter number is the line's link: it looks like a number at rest and
+   takes the accent when it is doing its job. */
+.lnlinks { color: inherit; text-decoration: none; }
+.lnlinks:hover { color: var(--accent); }
 
 /* Keyword.Constant, .Declaration, .Namespace, .Pseudo, .Reserved, and .Type: one
    keyword colour, because a keyword's colour does not change with the slot it

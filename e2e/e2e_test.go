@@ -1102,6 +1102,51 @@ func TestContentRendering(t *testing.T) {
 	}
 }
 
+func TestLineAnchors(t *testing.T) {
+	resetStore(t)
+	b := loginAs(t, alice)
+	id := createGist(t, b, "Anchors", [][2]string{
+		{"code.go", "package main\n\nfunc main() {}\n"},
+		{"doc.md", "# Title\n\ntext\n"},
+		{"notes.unknownext", "one <b>two</b>\nthree\n"},
+	})
+	_, body := b.get("/gist/" + id)
+
+	// The first line-anchored file owns the bare L prefix...
+	if !strings.Contains(body, `id="L2"`) {
+		t.Error("first anchored file missing bare line ids")
+	}
+	// ...and its gutter numbers are the line links.
+	if !strings.Contains(body, `<a class="lnlinks" href="#L2">2</a>`) {
+		t.Error("gutter numbers are not line links")
+	}
+	// The unknown-extension file gets a namespaced file anchor and gutter.
+	if !strings.Contains(body, `id="file-notes-unknownext" data-anchored`) {
+		t.Error("unknown-ext file missing its file anchor")
+	}
+	if !strings.Contains(body, `id="file-notes-unknownext-L2"`) {
+		t.Error("unknown-ext file missing namespaced line ids")
+	}
+	// Two anchored sections, not three: the markdown file keeps only its
+	// heading anchors.
+	if n := strings.Count(body, `data-anchored`); n != 2 {
+		t.Errorf("anchored sections = %d, want 2", n)
+	}
+	// No line anchors inside the markdown section.
+	docStart := strings.Index(body, `<h2 class="file-name">doc.md</h2>`)
+	if docStart < 0 {
+		t.Fatal("doc.md section not found")
+	}
+	docEnd := strings.Index(body[docStart:], "</section>")
+	if docEnd < 0 {
+		t.Fatal("doc.md section end not found")
+	}
+	doc := body[docStart : docStart+docEnd]
+	if strings.Contains(doc, `id="L`) || strings.Contains(doc, "lnlinks") {
+		t.Error("markdown section carries line anchors")
+	}
+}
+
 func TestMathAndMermaidScriptsConditional(t *testing.T) {
 	resetStore(t)
 	b := loginAs(t, alice)
